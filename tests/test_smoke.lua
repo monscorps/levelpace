@@ -49,7 +49,7 @@ h.run("full stack boots through DB_READY and PLAYER_READY", function()
   h.ok(LP.Bar and LP.Bar.frame, "bar created")
   h.ok(LP.Box and LP.Box.frame, "box created")
   h.ok(LP.Options and LP.Options.built, "options panels registered")
-  h.eq(#(h.state.panels or {}), 3, "three options panels")
+  h.eq(#(h.state.panels or {}), 4, "four options panels")
 end)
 
 h.run("a full kill-to-projection round trip", function()

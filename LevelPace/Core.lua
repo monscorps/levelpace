@@ -125,6 +125,14 @@ LP.defaults = {
       shown = false, width = 160, height = 16,
       point = "CENTER", relPoint = "CENTER", x = 0, y = -215,
     },
+    -- Sharing is OFF by default and stays off until explicitly enabled.
+    share = {
+      enabled = false,
+      alias = "",
+      shareRealm = true,
+      shareClass = true,
+      shareFaction = true,
+    },
     gapWarnSeconds = 600,
     countRestedInProjection = true,
   },
@@ -195,6 +203,14 @@ local function dispatch(input)
     LP.db.profile.locked = (cmd == "lock")
     LP:Fire("LOCK_CHANGED", LP.db.profile.locked)
     LP:Print(cmd == "lock" and "frames locked." or "frames unlocked -- drag to move.")
+  elseif cmd == "share" then
+    if not LP.Export then LP:Print("export module not loaded") return end
+    LP:Print(LP.Export:Summary())
+    if LP.Export:Enabled() then
+      LP:Print("data is written on logout or /reload; the uploader sends it from there.")
+    else
+      LP:Print("sharing is off. /lp then Leaderboard to turn it on.")
+    end
   elseif cmd == "debug" then
     LP.debug = not LP.debug
     LP:Print("debug " .. (LP.debug and "on" or "off"))
@@ -204,7 +220,7 @@ local function dispatch(input)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
   else
-    LP:Print("commands: reset, quests, lock, unlock, show, hide, debug")
+    LP:Print("commands: reset, quests, share, lock, unlock, show, hide, debug")
   end
   LP.lastCommand = cmd
 end

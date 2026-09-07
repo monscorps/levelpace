@@ -54,6 +54,7 @@ local function stubFrame(name)
     "SetVertexColor", "SetTexCoord", "SetDrawLayer", "SetScale", "SetUserPlaced",
     "SetResizable", "SetShadowOffset", "SetShadowColor", "SetOrientation",
     "SetChecked", "SetValueStep", "SetObeyStepOnDrag", "SetHitRectInsets",
+    "SetAutoFocus", "ClearFocus", "SetFocus", "HighlightText", "SetMaxLetters",
   } do
     f[m] = f[m] or noop
   end
@@ -196,6 +197,8 @@ local function installGlobals()
   _G.UIDropDownMenu_SetWidth = function() end
   _G.UIDropDownMenu_SetText = function(f, t) f.dropText = t end
   _G.GameFontNormal = {}
+  _G.UnitClass = function() return "Warrior", "WARRIOR" end
+  _G.UnitFactionGroup = function() return harness.state.faction or "Alliance" end
 
   _G.CreateFrame = function(_, name) return stubFrame(name) end
   _G.UIParent = stubFrame("UIParent")

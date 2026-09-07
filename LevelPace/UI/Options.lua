@@ -354,6 +354,82 @@ function Options:BuildLines()
   return p
 end
 
+function Options:BuildSharing()
+  local p = newPanel("Leaderboard", "LevelPace")
+  local db = LP.db.profile
+
+  makeLabel(p, "Leaderboard", 16, -16, "GameFontNormalLarge")
+  makeLabel(p, "Off by default. Nothing leaves your machine unless you turn this on.",
+    16, -40, "GameFontHighlightSmall")
+
+  local y = -74
+  track(p, makeCheck(p, "Share my levelling stats", 16, y,
+    function() return db.share.enabled end,
+    function(v) db.share.enabled = v; LP:Fire("SHARE_CHANGED") end))
+  y = y - 34
+
+  makeLabel(p, "How it works", 16, y, "GameFontNormal"); y = y - 22
+  for _, line in ipairs({
+    "The addon cannot use the network. It only writes to its saved-variables file.",
+    "A separate uploader program on your PC reads that file and sends it on.",
+    "Without the uploader running, enabling this does nothing at all.",
+    "Data is written on logout or /reload only -- there is no live upload.",
+  }) do
+    makeLabel(p, "- " .. line, 22, y, "GameFontDisableSmall"); y = y - 16
+  end
+  y = y - 16
+
+  makeLabel(p, "What is sent", 16, y, "GameFontNormal"); y = y - 22
+  for _, line in ipairs({
+    "For each COMPLETED level: the level, how long it took, XP by source,",
+    "kills, quests, deaths, corpse-run time, and rested XP used.",
+    "Your chosen display name, and a random id so your entry can be updated.",
+    "Never: zones, coordinates, quest names, group members, chat, or account info.",
+  }) do
+    makeLabel(p, "- " .. line, 22, y, "GameFontDisableSmall"); y = y - 16
+  end
+  y = y - 18
+
+  track(p, makeCheck(p, "Include my realm name", 16, y,
+    function() return db.share.shareRealm end,
+    function(v) db.share.shareRealm = v; LP:Fire("SHARE_CHANGED") end))
+  y = y - 26
+  track(p, makeCheck(p, "Include my class", 16, y,
+    function() return db.share.shareClass end,
+    function(v) db.share.shareClass = v; LP:Fire("SHARE_CHANGED") end))
+  y = y - 26
+  track(p, makeCheck(p, "Include my faction", 16, y,
+    function() return db.share.shareFaction end,
+    function(v) db.share.shareFaction = v; LP:Fire("SHARE_CHANGED") end))
+  y = y - 40
+
+  makeLabel(p, "Display name on the board (blank = character name)", 16, y, "GameFontNormalSmall")
+  y = y - 22
+  local box = CreateFrame("EditBox", nextName("Alias"), p, "InputBoxTemplate")
+  box:SetWidth(200); box:SetHeight(20); box:SetAutoFocus(false)
+  box:SetPoint("TOPLEFT", p, "TOPLEFT", 22, y)
+  box:SetText(db.share.alias or "")
+  box:SetScript("OnEnterPressed", function(self)
+    db.share.alias = strtrim(self:GetText() or "")
+    self:ClearFocus(); LP:Fire("SHARE_CHANGED")
+    LP:Print("display name set to: " .. (db.share.alias ~= "" and db.share.alias or "(character name)"))
+  end)
+  box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+  track(p, { Refresh = function() box:SetText(db.share.alias or "") end })
+  y = y - 44
+
+  makeButton(p, "Delete my shared data", 16, y, function()
+    db.share.enabled = false
+    if LP.Export then LP.Export:Clear() end
+    LP:Fire("SHARE_CHANGED")
+    LP:Print("sharing off and local export cleared. Use the uploader's --forget "
+      .. "to remove your entry from the server.")
+  end)
+  makeLabel(p, "Clears the local export and turns sharing off.", 170, y - 6, "GameFontDisableSmall")
+
+  return p
+end
+
 function Options:Build()
   if self.built or not CreateFrame then return end
   if not InterfaceOptions_AddCategory then return end
@@ -361,6 +437,7 @@ function Options:Build()
   InterfaceOptions_AddCategory(self:BuildGeneral())
   InterfaceOptions_AddCategory(self:BuildAppearance())
   InterfaceOptions_AddCategory(self:BuildLines())
+  InterfaceOptions_AddCategory(self:BuildSharing())
 end
 
 LP:On("PLAYER_READY", function() Options:Build() end)
