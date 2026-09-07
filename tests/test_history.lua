@@ -175,4 +175,43 @@ h.run("Summarise reports the real mix", function()
   h.near(s.killShare, 0.3, 0.001, "30% from kills")
 end)
 
+
+-- ==== live view (reported bug: display only moved on XP gain) ====
+
+h.run("elapsed advances with the clock, not only on XP events", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 100 experience.")
+  local atGain = LP.History:Elapsed()
+  h.advance(300)
+  h.near(LP.History:Elapsed(), atGain + 300, 1, "five idle minutes are counted immediately")
+end)
+
+h.run("the live rate DECAYS while idle", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 1000 experience.")
+  local r1 = LP.History:LiveBaseRate()
+  h.near(r1, 100, 1, "1000 base over 10s")
+  h.advance(90)
+  local r2 = LP.History:LiveBaseRate()
+  h.near(r2, 10, 0.5, "same 1000 base over 100s -- the rate fell without any new event")
+  h.ok(r2 < r1, "idle time pushes the rate down")
+end)
+
+h.run("live rate is nil before any XP", function()
+  local LP = load()
+  h.advance(60)
+  h.eq(LP.History:LiveBaseRate(), nil, "no XP means no rate, not zero")
+end)
+
+h.run("BaseRateSamples reflects the live value", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 1000 experience.")
+  h.eq(#LP.History:BaseRateSamples(), 1, "one live value")
+  h.advance(90)
+  h.near(LP.History:BaseRateSamples()[1], 10, 0.5, "and it is recomputed, not cached")
+end)
+
 os.exit(h.report() and 0 or 1)

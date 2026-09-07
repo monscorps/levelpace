@@ -223,10 +223,8 @@ function Box:Update()
   end
 end
 
-LP:On("PLAYER_READY", function()
-  Box:Create()
-  LP:Schedule(1, function() Box:Update() end)
-end)
+LP:On("PLAYER_READY", function() Box:Create() end)
+LP:On("TICK", function() Box:Update() end)
 LP:On("XP_EVENT", function() Box:Update() end)
 LP:On("QUESTS_SCANNED", function() Box:Update() end)
 LP:On("STYLE_CHANGED", function() Box:ApplyStyle(); Box:Update() end)

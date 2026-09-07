@@ -60,7 +60,7 @@ function Tooltip:Show(owner)
   if rec then
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("This level", 1, 1, 1)
-    pair("Elapsed", util.FormatTime(rec.elapsed))
+    pair("Elapsed", util.FormatTime(H:Elapsed()))
     local total = 0
     for _, v in pairs(rec.xpBySource) do total = total + v end
     if total > 0 then

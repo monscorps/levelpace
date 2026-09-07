@@ -165,3 +165,14 @@ end
 
 LP:On("XP_EVENT", function() Estimator:Refresh() end)
 LP:On("HISTORY_RESET", function() Estimator:Refresh() end)
+
+-- Heartbeat. Without this the projection only moves when XP arrives, so the
+-- display sits frozen between kills and the rate never reflects idle time.
+-- One shared job on the single driver frame; the work is a handful of
+-- arithmetic ops.
+LP:On("PLAYER_READY", function()
+  LP:Schedule(1, function()
+    Estimator:Refresh()
+    LP:Fire("TICK")
+  end)
+end)

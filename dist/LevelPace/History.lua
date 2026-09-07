@@ -14,7 +14,6 @@ local d = LP.data
 local History = {}
 LP.History = History
 
-local BASE_RATE_WINDOW = 60   -- rolling base-XP samples for the current level
 local KILL_XP_WINDOW = 120    -- per-kill base XP, for the mobs-to-level range
 
 local function newRecord(level, now)
@@ -52,7 +51,6 @@ function History:Init()
     LP.db.current.lastEventAt = now
   end
   self.record = LP.db.current
-  self.baseRateSamples = {}
   self.killXPSamples = {}
   return self.record
 end
@@ -105,12 +103,6 @@ function History:AddEvent(e)
     r.questCount = r.questCount + 1
   end
 
-  -- Base XP per second over the level so far. Uses wall-clock elapsed, which
-  -- is the whole point: it includes the running and the dying.
-  if r.elapsed > 0 then
-    util.PushBounded(self.baseRateSamples, r.baseXP / r.elapsed, BASE_RATE_WINDOW)
-  end
-
   local zone = GetZoneText and GetZoneText() or "?"
   r.zones[zone] = (r.zones[zone] or 0) + gap
 end
@@ -127,7 +119,6 @@ function History:OnLevelUp(newLevel)
   end
   LP.db.current = newRecord(newLevel, now)
   self.record = LP.db.current
-  self.baseRateSamples = {}
   self.killXPSamples = {}
   LP:Fire("LEVEL_CHANGED", newLevel)
 end
@@ -154,7 +145,6 @@ function History:Reset()
   local level = (UnitLevel and UnitLevel("player")) or (self.record and self.record.level) or 1
   LP.db.current = newRecord(level, now)
   self.record = LP.db.current
-  self.baseRateSamples = {}
   self.killXPSamples = {}
   LP:Fire("HISTORY_RESET")
 end
@@ -175,7 +165,37 @@ function History:MedianBaseRate()
   return util.Median(rates)
 end
 
-function History:BaseRateSamples() return self.baseRateSamples or {} end
+-- Wall-clock time on this level RIGHT NOW, not as of the last XP gain.
+function History:Elapsed()
+  local r = self:Current()
+  if not r then return 0 end
+  local now = GetTime and GetTime() or 0
+  return math.max(0, now - (r.startedAt or now))
+end
+
+-- The live base rate: total base XP this level divided by wall-clock elapsed
+-- RIGHT NOW.
+--
+-- This is deliberately recomputed on demand rather than sampled at XP-gain
+-- time. A snapshot taken when you last killed something never decays -- stand
+-- still for ten minutes and it still claims your old pace. Recomputing means
+-- idle time pushes the rate down as it happens, which is the whole point of
+-- measuring wall-clock rather than combat time.
+function History:LiveBaseRate()
+  local r = self:Current()
+  if not r or not r.baseXP or r.baseXP <= 0 then return nil end
+  local elapsed = self:Elapsed()
+  if elapsed <= 0 then return nil end
+  return r.baseXP / elapsed
+end
+
+-- Kept as the Estimator's input shape. A single live value, not a window of
+-- stale samples.
+function History:BaseRateSamples()
+  local rate = self:LiveBaseRate()
+  return rate and { rate } or {}
+end
+
 function History:KillXPSamples() return self.killXPSamples or {} end
 
 -- What fraction of the current level has been observed. Used to weight the

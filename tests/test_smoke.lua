@@ -127,4 +127,38 @@ h.run("real ADDON_LOADED then PLAYER_LOGIN boots the addon", function()
   h.ok(LP.driverStarted, "scheduler driver started")
 end)
 
+
+-- REGRESSION (reported): the display only refreshed when XP arrived, so
+-- time-to-level sat frozen between kills instead of counting down.
+h.run("the heartbeat refreshes the projection with no XP events at all", function()
+  for _, f in ipairs(tocFiles()) do h.load(f) end
+  local LP = _G.LevelPace
+  h.state.level, h.state.xp, h.state.xpMax = 71, 0, 100000
+  LP:InitDB(); LP:Fire("DB_READY"); LP:Fire("PLAYER_READY")
+
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 1000 experience.")
+  local before = LP.Estimator:Result().timeToLevel
+  h.ok(before, "a projection exists")
+
+  -- No further XP. Only time passes, and only the scheduler runs.
+  h.advance(200)
+  LP:_Tick(1)
+  local after = LP.Estimator:Result().timeToLevel
+  h.ok(after, "still projecting")
+  h.ok(after > before, "idling made the estimate WORSE, as it should")
+end)
+
+h.run("the shared TICK drives both frames", function()
+  for _, f in ipairs(tocFiles()) do h.load(f) end
+  local LP = _G.LevelPace
+  h.state.level, h.state.xp, h.state.xpMax = 71, 0, 100000
+  LP:InitDB(); LP:Fire("DB_READY"); LP:Fire("PLAYER_READY")
+  local ticks = 0
+  LP:On("TICK", function() ticks = ticks + 1 end)
+  LP:_Tick(1)
+  h.eq(ticks, 1, "one tick per second")
+  h.ok(LP.Bar.text and LP.Bar.text.text, "bar text was written on the tick")
+end)
+
 os.exit(h.report() and 0 or 1)

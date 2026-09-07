@@ -141,9 +141,10 @@ LP:On("PLAYER_READY", function()
   util.SafeRegisterEvent(f, "UPDATE_EXHAUSTION")
   util.SafeRegisterEvent(f, "PLAYER_LEVEL_UP")
   f:SetScript("OnEvent", function() Bar:Update() end)
-  -- A 1s tick so the countdown moves even while nothing is being killed.
-  LP:Schedule(1, function() Bar:Update() end)
 end)
+
+-- Redraw on the shared heartbeat so the countdown moves while idle.
+LP:On("TICK", function() Bar:Update() end)
 
 LP:On("XP_EVENT", function() Bar:Update() end)
 LP:On("STYLE_CHANGED", function() Bar:ApplyStyle(); Bar:Update() end)
