@@ -274,4 +274,62 @@ h.run("grind baseline is nil before any rate is measured", function()
   h.eq(LP.Quests:GrindBaseline(), nil, "unknown, not zero")
 end)
 
+
+-- ==== exact rate calibration ====
+
+h.run("Calibrate reads the server rate from the two disagreeing APIs", function()
+  local LP = load()
+  h.state.questLog = { quest(101, "Kill Ghouls", 4200, { { text = "Ghoul slain: 10/10" } }, true) }
+  LP.Quests:Scan()
+  h.state.questGiverTitle = "Kill Ghouls"
+  h.state.rewardXP = 21000            -- server value: 4200 x5
+  local questID, blizz, rated = LP.Quests:Calibrate()
+  h.eq(questID, 101, "matched the quest by title")
+  h.eq(blizz, 4200, "blizzlike value from the log")
+  h.eq(rated, 21000, "server value from GetRewardXP")
+  h.near(LP.Rates:GetQuestRate(), 5.0, 0.001, "x5 learned from ONE reward panel")
+end)
+
+h.run("an ambiguous title match refuses to calibrate", function()
+  local LP = load()
+  h.state.questLog = {
+    quest(101, "Kill Ghouls", 4200, { { text = "A: 0/1" } }),
+    quest(102, "Kill Ghouls", 9999, { { text = "B: 0/1" } }),
+  }
+  LP.Quests:Scan()
+  h.state.questGiverTitle = "Kill Ghouls"
+  h.state.rewardXP = 21000
+  h.eq(LP.Quests:Calibrate(), nil, "two quests share the title -- refuse rather than guess")
+  h.eq(LP.Rates:GetQuestRate(), nil, "no poisoned sample")
+end)
+
+h.run("an unmatched title does not calibrate", function()
+  local LP = load()
+  h.state.questLog = { quest(101, "Kill Ghouls", 4200, { { text = "A: 0/1" } }) }
+  LP.Quests:Scan()
+  h.state.questGiverTitle = "Some Other Quest"
+  h.state.rewardXP = 21000
+  h.eq(LP.Quests:Calibrate(), nil, "no match")
+  h.eq(LP.Rates:GetQuestRate(), nil, "no sample")
+end)
+
+-- REGRESSION: feeding GetRewardXP() into the observation learner compares the
+-- server value against itself and always yields x1 -- a x5 server would be
+-- reported as blizzlike.
+h.run("the fallback learner is fed the BLIZZLIKE xp, never GetRewardXP", function()
+  local LP = load()
+  h.state.questLog = { quest(101, "Kill Ghouls", 4200, { { text = "A: 1/1" } }, true) }
+  LP.Quests:Scan()
+  h.state.questGiverTitle = "Kill Ghouls"
+  h.state.rewardXP = 21000
+  LP.Quests:Calibrate()
+  LP.Quests.pendingBlizzXP = 4200
+  -- simulate the turn-in: the ledger is armed with the blizzlike value
+  LP.Ledger:NoteQuestFinished(101, LP.Quests.pendingBlizzXP)
+  LP.Ledger:OnChat("You gain 21000 experience.")
+  local samples = LP.Rates.questSamples
+  h.eq(#samples, 1, "one fallback sample")
+  h.near(samples[1], 5.0, 0.001, "21000 / 4200 = x5, NOT 21000 / 21000 = x1")
+end)
+
 os.exit(h.report() and 0 or 1)

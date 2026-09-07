@@ -108,4 +108,50 @@ h.run("learner compares base, not total", function()
   h.near(LP.Rates:GetQuestRate(), 1.0, 0.001, "base 1000 vs predicted 1000 is x1, not x3")
 end)
 
+
+-- ==== the exact path ====
+-- GetRewardXP() is server truth (rate x auras applied); GetQuestLogRewardXP()
+-- is blizzlike. Their ratio IS the multiplier -- no turn-in needed.
+
+h.run("one ratio sample gives the rate exactly", function()
+  local LP = load()
+  LP.Rates:AddQuestRatioSample(21000, 4200, 1)
+  h.near(LP.Rates:GetQuestRate(), 5.0, 0.001, "x5 from a single sample")
+  h.eq(LP.Rates:QuestRateSource(), "exact", "labelled exact")
+  h.eq(LP.Rates:QuestSamplesNeeded(), 0, "nothing more needed")
+end)
+
+h.run("ratio divides out heirlooms to leave the server rate", function()
+  local LP = load()
+  -- GetRewardXP already includes the heirloom aura, so it must be removed.
+  LP.Rates:AddQuestRatioSample(4200 * 5 * 1.2705, 4200, 1.2705)
+  h.near(LP.Rates:GetQuestRate(), 5.0, 0.01, "gear does not inflate the server rate")
+end)
+
+h.run("exact reading beats the statistical fallback", function()
+  local LP = load()
+  for _ = 1, 5 do LP.Rates:AddQuestSample(1000, 3000, 1) end  -- fallback says x3
+  h.near(LP.Rates:GetQuestRate(), 3.0, 0.001, "fallback in use")
+  LP.Rates:AddQuestRatioSample(5000, 1000, 1)                 -- exact says x5
+  h.near(LP.Rates:GetQuestRate(), 5.0, 0.001, "exact wins outright")
+  h.eq(LP.Rates:QuestRateSource(), "exact", "source switches")
+end)
+
+h.run("garbage ratio samples are rejected", function()
+  local LP = load()
+  LP.Rates:AddQuestRatioSample(0, 4200, 1)
+  LP.Rates:AddQuestRatioSample(21000, 0, 1)
+  LP.Rates:AddQuestRatioSample(nil, 4200, 1)
+  h.eq(LP.Rates:RatioSampleCount(), 0, "nothing stored")
+  h.eq(LP.Rates:GetQuestRate(), nil, "still unknown")
+end)
+
+h.run("reset clears the exact samples too", function()
+  local LP = load()
+  LP.Rates:AddQuestRatioSample(21000, 4200, 1)
+  LP.Rates:Reset()
+  h.eq(LP.Rates:RatioSampleCount(), 0, "cleared")
+  h.eq(LP.Rates:GetQuestRate(), nil, "back to unknown")
+end)
+
 os.exit(h.report() and 0 or 1)

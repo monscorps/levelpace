@@ -321,8 +321,7 @@ function Quests:PrintRanking()
     LP:Print("grinding rate not measured yet -- kill a few mobs.")
   end
   if LP.Rates and not LP.Rates:GetQuestRate() then
-    LP:Print(string.format("|cffe0a040learning your server's quest rate (%d/%d turn-ins)|r",
-      LP.Rates:QuestSampleCount(), LP.Rates.MIN_SAMPLES))
+    LP:Print("|cffe0a040server quest rate unknown -- open any quest's reward panel to read it|r")
   end
 end
 
@@ -332,33 +331,66 @@ end
 
 Quests:BuildPatterns()
 
--- Map the currently-open questgiver window back to a quest log ID by title.
--- Returns nil when there is no match, which is fine: the rate learner only
--- needs the predicted XP, not the ID.
-function Quests:ResolvePendingID()
+-- Map the currently-open questgiver window back to a quest log entry by
+-- title. There is no questgiver-side quest ID on 3.3.5a, so the title is the
+-- only handle.
+--
+-- Requires a UNIQUE match: two quests with the same title would give us the
+-- wrong blizzlike XP and poison the calibration, so an ambiguous match is
+-- treated as no match.
+function Quests:ResolvePending()
   if not GetTitleText then return nil end
   local ok, title = pcall(GetTitleText)
   if not ok or not title or title == "" then return nil end
+  local foundID, foundQ, matches = nil, nil, 0
   for questID, q in pairs(self.cache) do
-    if q.title == title then return questID end
+    if q.title == title then
+      matches = matches + 1
+      foundID, foundQ = questID, q
+    end
   end
-  return nil
+  if matches ~= 1 then return nil end
+  return foundID, foundQ
+end
+
+-- Read the server's quest multiplier EXACTLY, by comparing the two APIs that
+-- deliberately disagree:
+--
+--   GetRewardXP()          server truth, already multiplied by Rate.XP.Quest
+--                          and by any SPELL_AURA_MOD_XP_QUEST_PCT auras
+--   GetQuestLogRewardXP()  blizzlike, recomputed client-side from QuestXP.dbc
+--
+-- Their ratio is the multiplier. One clean sample is the answer -- this does
+-- not need a turn-in, and it does not need the XP to be observed at all.
+--
+-- Valid at QUEST_COMPLETE, where the quest is still in the log so the
+-- blizzlike side is readable.
+function Quests:Calibrate()
+  local questID, q = self:ResolvePending()
+  if not q or not q.xp or q.xp <= 0 then return nil end
+  if not GetRewardXP then return nil end
+  local ok, rated = pcall(GetRewardXP)
+  if not ok or not rated or rated <= 0 then return nil end
+
+  local mult = LP.Modifiers and LP.Modifiers:HeirloomMultiplier() or 1
+  LP.Rates:AddQuestRatioSample(rated, q.xp, mult)
+  return questID, q.xp, rated
 end
 
 function Quests:Enable()
   self:BuildPatterns()
   if not CreateFrame then return end
 
-  -- Capture the client's predicted XP at the moment of turn-in, BEFORE the
-  -- quest leaves the log. GetQuestReward is a plain unprotected global on
-  -- 3.3.5a, called from ordinary click handlers, so it can be hooked.
-  -- GetRewardXP() is the questgiver-side twin of GetQuestLogRewardXP().
-  if hooksecurefunc and GetRewardXP then
+  -- Arm XP attribution at the moment of turn-in. GetQuestReward is a plain
+  -- unprotected global on 3.3.5a, called from ordinary click handlers.
+  --
+  -- The value passed is the BLIZZLIKE xp captured at QUEST_COMPLETE, NOT
+  -- GetRewardXP(). GetRewardXP is already multiplied by the server rate, so
+  -- comparing it against the XP actually received would always yield x1 and
+  -- the fallback learner would silently report a x5 server as blizzlike.
+  if hooksecurefunc then
     hooksecurefunc("GetQuestReward", function()
-      local ok, xp = pcall(GetRewardXP)
-      if ok and xp and xp > 0 then
-        LP.Ledger:NoteQuestFinished(Quests.pendingQuestID, xp)
-      end
+      LP.Ledger:NoteQuestFinished(Quests.pendingQuestID, Quests.pendingBlizzXP)
     end)
   end
 
@@ -371,13 +403,14 @@ function Quests:Enable()
     if event == "QUEST_LOG_UPDATE" then
       dirty = true
     elseif event == "QUEST_COMPLETE" then
-      -- The questgiver window is open and showing the quest we are about to
-      -- hand in. GetTitleText() is the only handle on WHICH quest it is --
-      -- there is no questgiver-side quest ID on 3.3.5a -- so match it back to
-      -- the log by title.
-      Quests.pendingQuestID = Quests:ResolvePendingID()
+      -- The questgiver window is open on the quest we are about to hand in.
+      -- This is the one moment both XP APIs are readable for the same quest.
+      local questID, blizz = Quests:Calibrate()
+      Quests.pendingQuestID = questID
+      Quests.pendingBlizzXP = blizz
     elseif event == "QUEST_FINISHED" then
       Quests.pendingQuestID = nil
+      Quests.pendingBlizzXP = nil
     end
   end)
   -- Debounced: a full scan touches every quest and moves the log selection,

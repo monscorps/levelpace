@@ -82,10 +82,11 @@ function Tooltip:Show(owner)
     GameTooltip:AddLine(" ")
     local q = LP.Rates:GetQuestRate()
     if q then
-      pair("Server quest rate", string.format("x%.2f", q), GOOD)
+      local src = LP.Rates:QuestRateSource()
+      pair("Server quest rate", string.format("x%.2f%s", q,
+        src == "exact" and "" or " (est)"), GOOD)
     else
-      pair("Server quest rate", string.format("learning (%d/%d turn-ins)",
-        LP.Rates:QuestSampleCount(), LP.Rates.MIN_SAMPLES), WARN)
+      pair("Server quest rate", "open a quest reward panel", WARN)
     end
     local k = LP.Rates:GetKillRate()
     if k then pair("Server kill rate", string.format("x%.2f", k), GOOD) end

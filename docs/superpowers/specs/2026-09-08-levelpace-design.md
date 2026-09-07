@@ -211,9 +211,28 @@ QUEST_LOG_UPDATE ────────────────────> Q
 
 > One research lane asserted `GetQuestLogRewardXP()` returns a "server-correct" number. That is wrong, and it is contradicted by the primary-source reading of `Player::RewardQuest` in the quest lane. The design follows the primary source.
 
-### 5.1 Quest rate
+### 5.1 Quest rate — read exactly, not learned
 
-On each turn-in we have a matched pair: the client's predicted XP (captured *before* the quest leaves the log) and the XP actually received.
+**Superseded by a better finding.** `GetRewardXP()` (the questgiver-side call, valid at `QUEST_DETAIL` / `QUEST_COMPLETE`) returns the **server-computed** value: `Quest::BuildQuestRewards` calls `Player::GetQuestXPReward`, which applies `RATE_XP_QUEST` and then `AddPct` over `SPELL_AURA_MOD_XP_QUEST_PCT`. `GetQuestLogRewardXP()` returns the **blizzlike** value the client recomputes from `QuestXP.dbc`.
+
+So the ratio of the two, for the same quest, **is** the multiplier — no turn-in, no statistics, one sample:
+
+```lua
+local rated = GetRewardXP()            -- server truth, rate x auras
+local prev = GetQuestLogSelection()
+SelectQuestLogEntry(indexOfThisQuest)
+local blizz = GetQuestLogRewardXP()    -- blizzlike
+SelectQuestLogEntry(prev)
+questRate = rated / blizz / heirloomMultiplier
+```
+
+⚠ This also invalidates the obvious implementation of the fallback below: feeding `GetRewardXP()` in as the "prediction" compares the server value against itself and always yields x1, silently reporting a x5 server as blizzlike. The fallback must be fed the **blizzlike** value.
+
+⚠ The title is the only handle on which quest the questgiver is showing (there is no questgiver-side quest ID on 3.3.5a), so calibration requires a **unique** title match in the log and refuses to guess otherwise.
+
+### 5.1b Quest rate — statistical fallback
+
+Used only when no reward panel has been opened. On each turn-in we have a matched pair: the client's blizzlike XP (captured *before* the quest leaves the log) and the XP actually received.
 
 ```
 sample = actualXP / (predictedXP * heirloomQuestMultiplier)
