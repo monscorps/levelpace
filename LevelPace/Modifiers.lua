@@ -101,8 +101,10 @@ function Modifiers:Enable()
   -- it on 3.3.5a raises a hard Lua error.
   util.SafeRegisterEvent(f, "UNIT_INVENTORY_CHANGED")
   util.SafeRegisterEvent(f, "UPDATE_EXHAUSTION")
-  f:SetScript("OnEvent", function(_, event, unit)
-    if event == "UNIT_INVENTORY_CHANGED" and unit ~= "player" then return end
+  -- Deliberately not filtered on unit == "player": the player's unit token
+  -- becomes "vehicle" while in a vehicle, and the scan is four
+  -- GetInventoryItemID calls, so filtering would risk more than it saves.
+  f:SetScript("OnEvent", function()
     Modifiers:Refresh()
   end)
   self.frame = f

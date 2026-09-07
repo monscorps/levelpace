@@ -71,12 +71,12 @@ Every claim below was verified against the 3.3.5a `FrameXML` (three byte-identic
 |---|---|
 | `C_Timer` (added 6.0.2) | Throttled `OnUpdate` on a pooled frame. |
 | `QUEST_TURNED_IN` (added 6.0.2) | `QUEST_FINISHED` + `hooksecurefunc("GetQuestReward", ...)`. |
-| `PLAYER_EQUIPMENT_CHANGED` (added 4.0.1) | `UNIT_INVENTORY_CHANGED` (arg1 = unitID). |
+| ~~`PLAYER_EQUIPMENT_CHANGED`~~ — **correction: it DOES exist on 3.3.5a** and fires with `(equipmentSlot, hasCurrent)`. Blizzard's own 3.3.5 UI never calls it, which is the source of the widespread "4.0.1 only" claim, but three independent `Interface: 30300` addons register it unguarded and work. | We still use `UNIT_INVENTORY_CHANGED` — it is equally correct here and needs no per-slot bookkeeping. |
 | `PLAYER_AURAS_CHANGED` (removed 3.0.3) | `UNIT_AURA` (arg1 = unitID). |
 | `GetMaxPlayerLevel()` (added 4.0.6) | `MAX_PLAYER_LEVEL`, which is a FrameXML global that is **0 until `ReputationFrame` initialises it** from `GetAccountExpansionLevel()`. Read it at `PLAYER_LOGIN`, not at file scope. |
 | `C_QuestLog.*`, `GetQuestLogQuestID`, `GetQuestsCompleted` | `select(9, GetQuestLogTitle(i))`. |
 | `os.time`, `os.date`, `os.clock`, `io`, `package` | `time()`, `date()`, `GetTime()`. |
-| Any API for the server's XP rates | Must be **learned**. See §5. |
+| Any API for `Rate.XP.Kill` | Must be **learned** statistically. See §5.2. (The **quest** rate, by contrast, can be read exactly — see §5.1.) |
 | Any API for RAF-active state | Undetectable. Documented limitation. |
 
 ⚠ **Registering an unknown event raises a hard Lua error** on 3.3.5a. Every `RegisterEvent` for anything not in §3.1 must be `pcall`-wrapped, or simply not attempted.
@@ -120,7 +120,7 @@ Attribution rule: an *unnamed* XP gain within a short window (500ms) of a `QUEST
 ### 3.5 Rested — the mechanics the UI lies about
 
 - Rested is a **strict doubling** of kill XP: `bonus = min(GetRestBonus(), xp)`, so a rested kill grants `base + base` = 200% while the pool lasts.
-- ⚠ `GetRestState()` reports a multiplier of **1.5** and the tooltip says "150% of normal experience", but the actual per-kill effect is **200%**. Do not use `GetRestState`'s multiplier for arithmetic.
+- ⚠ Do not use `GetRestState()`'s multiplier for arithmetic. The research lanes disagreed on whether it reports 1.5 or 2.0 (the final synthesis says `Exhaustion.dbc` row 1 `Factor = 2.0`, contradicting an earlier lane's 1.5). The addon sidesteps the question entirely by never calling it — the **200%** figure comes from the server source, `bonus = min(GetRestBonus(), xp)`, which is not in dispute.
 - ⚠ **Rested does not apply to quest XP or exploration XP.** `bonus_xp = victim ? GetXPRestBonus(xp) : 0` — quests pass `nullptr`, so they get zero bonus and *do not drain the pool*. This is central to the quest-vs-grind comparison: being rested makes grinding better but does nothing for quests.
 - Pool cap is `0.75 * UnitXPMax` (worth 1.5 levels of total XP). `GetXPExhaustion()` returns the remaining pool directly.
 
