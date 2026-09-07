@@ -97,8 +97,11 @@ function Modifiers:Enable()
   self:Refresh()
   if not CreateFrame then return end
   local f = CreateFrame("Frame", "LevelPaceModifiers")
-  -- NOT PLAYER_EQUIPMENT_CHANGED -- that is a 4.0.1 addition and registering
-  -- it on 3.3.5a raises a hard Lua error.
+  -- PLAYER_EQUIPMENT_CHANGED does exist on 3.3.5a despite the widespread
+  -- "4.0.1 only" claim (Blizzard's own 3.3.5 UI simply never calls it), but
+  -- UNIT_INVENTORY_CHANGED is equally correct here and needs no per-slot
+  -- bookkeeping. Both go through SafeRegisterEvent regardless, because
+  -- registering an event this client does not know is a hard error.
   util.SafeRegisterEvent(f, "UNIT_INVENTORY_CHANGED")
   util.SafeRegisterEvent(f, "UPDATE_EXHAUSTION")
   -- Deliberately not filtered on unit == "player": the player's unit token
