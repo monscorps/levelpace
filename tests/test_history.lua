@@ -214,4 +214,91 @@ h.run("BaseRateSamples reflects the live value", function()
   h.near(LP.History:BaseRateSamples()[1], 10, 0.5, "and it is recomputed, not cached")
 end)
 
+
+-- ==== grind rate vs all-sources rate (critical review finding) ====
+
+h.run("killBaseXP tracks kills only", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 300 experience.")
+  LP.Ledger:NoteQuestFinished(1, 100)
+  LP.Ledger:OnChat("You gain 700 experience.")
+  local r = LP.History:Current()
+  h.eq(r.killBaseXP, 300, "kills only")
+  h.eq(r.baseXP, 1000, "all sources")
+end)
+
+h.run("LiveKillRate excludes quest XP entirely", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 1000 experience.")
+  h.near(LP.History:LiveKillRate(), 100, 1, "1000 kill xp over 10s")
+  LP.Ledger:NoteQuestFinished(1, 100)
+  LP.Ledger:OnChat("You gain 90000 experience.")
+  h.near(LP.History:LiveKillRate(), 100, 1, "unchanged by a 90k turn-in")
+  h.near(LP.History:LiveBaseRate(), 9100, 10, "all-sources rate does move")
+end)
+
+h.run("LiveKillRate is nil with quest XP only", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:NoteQuestFinished(1, 100)
+  LP.Ledger:OnChat("You gain 5000 experience.")
+  h.eq(LP.History:LiveKillRate(), nil, "no kills means no grind rate")
+  h.ok(LP.History:LiveBaseRate() > 0, "but there is an all-sources rate")
+end)
+
+-- ==== corpse runs (review finding: PLAYER_ALIVE also fires on RELEASE) ====
+
+h.run("releasing does not end the corpse run", function()
+  local LP = load()
+  LP.History:OnDeath()
+  h.advance(5)
+  h.state.isGhost = true
+  LP.History:OnResurrect()          -- this is the RELEASE, not a resurrection
+  h.eq(LP.History:Current().corpseRunSeconds, 0, "clock still running")
+  h.advance(85)
+  h.state.isGhost = false
+  LP.History:OnResurrect()          -- actually alive at the corpse
+  h.near(LP.History:Current().corpseRunSeconds, 90, 1,
+         "the full 90s corpse run is counted, not the 5s release delay")
+end)
+
+h.run("resurrecting in place without releasing still counts", function()
+  local LP = load()
+  LP.History:OnDeath()
+  h.advance(20)
+  h.state.isGhost = false
+  LP.History:OnResurrect()
+  h.near(LP.History:Current().corpseRunSeconds, 20, 1, "battle rez counted")
+end)
+
+-- ==== raid group (review finding: all XP was silently dropped) ====
+
+h.run("raid-penalty kill messages are parsed, not dropped", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Rotting Ghoul dies, you gain 84 experience. (-84 raid penalty)")
+  local r = LP.History:Current()
+  h.eq(r.killCount, 1, "the kill was counted")
+  h.eq(r.baseXP, 84, "total is already net of the penalty")
+end)
+
+h.run("rested-in-raid is not mis-parsed as a penalty", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 126 experience. (+42 exp Rested bonus, -12 raid penalty)")
+  local r = LP.History:Current()
+  h.eq(r.restedConsumed, 42, "rested extracted, not swallowed by the penalty pattern")
+  h.eq(r.baseXP, 84, "base excludes the rested bonus")
+end)
+
+h.run("unnamed raid-penalty gains still parse", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:NoteQuestFinished(1, 100)
+  LP.Ledger:OnChat("You gain 500 experience. (-50 raid penalty)")
+  h.eq(LP.History:Current().xpBySource.quest, 500, "attributed and counted")
+end)
+
 os.exit(h.report() and 0 or 1)

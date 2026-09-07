@@ -88,8 +88,6 @@ function Tooltip:Show(owner)
     else
       pair("Server quest rate", "open a quest reward panel", WARN)
     end
-    local k = LP.Rates:GetKillRate()
-    if k then pair("Server kill rate", string.format("x%.2f", k), GOOD) end
   end
 
   -- ---- previous levels ----

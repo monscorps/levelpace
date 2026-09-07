@@ -102,8 +102,21 @@ end
 
 function Bar:Update()
   if not self.frame or not UnitXP then return end
+
+  -- Visibility is decided FIRST. It used to sit after the max-level early
+  -- return, so at level 80 (where UnitXPMax is 0) the bar could never be
+  -- hidden by /lp hide or by unticking it in the options.
+  if LP.db.profile.bar.shown then self.holder:Show() else self.holder:Hide() end
+
   local xp, xpMax = UnitXP("player"), UnitXPMax("player")
-  if not xpMax or xpMax <= 0 then return end
+  if not xpMax or xpMax <= 0 then
+    -- Max level: nothing to fill.
+    self.frame:SetMinMaxValues(0, 1)
+    self.frame:SetValue(0)
+    self.rested:Hide()
+    self.text:SetText(MAX_PLAYER_LEVEL and ("Level " .. (UnitLevel("player") or "")) or "")
+    return
+  end
 
   self.frame:SetMinMaxValues(0, xpMax)
   self.frame:SetValue(xp)
@@ -126,11 +139,9 @@ function Bar:Update()
     self.rested:Hide()
   end
 
-  local pct = xpMax > 0 and (xp / xpMax * 100) or 0
+  local pct = xp / xpMax * 100
   self.text:SetText(string.format("%s / %s  (%.1f%%)",
     util.FormatNumber(xp), util.FormatNumber(xpMax), pct))
-
-  if LP.db.profile.bar.shown then self.holder:Show() else self.holder:Hide() end
 end
 
 LP:On("PLAYER_READY", function()

@@ -61,14 +61,6 @@ h.run("garbage samples are rejected, not stored", function()
   h.eq(LP.Rates:QuestSampleCount(), 0, "nothing stored")
 end)
 
-h.run("kill rate learns independently of quest rate", function()
-  local LP = load()
-  for _ = 1, 5 do LP.Rates:AddQuestSample(1000, 1000, 1) end   -- quests x1
-  for _ = 1, 5 do LP.Rates:AddKillSample(500, 100) end          -- kills x5
-  h.near(LP.Rates:GetQuestRate(), 1.0, 0.001, "quest x1")
-  h.near(LP.Rates:GetKillRate(), 5.0, 0.001, "kill x5 -- the case that inverts the recommendation")
-end)
-
 h.run("reset clears both", function()
   local LP = load()
   for _ = 1, 5 do LP.Rates:AddQuestSample(1000, 5000, 1) end

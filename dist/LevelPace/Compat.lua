@@ -21,14 +21,20 @@ function util.ConvertGlobalString(fmt)
   local p = fmt
   -- 1. escape magic characters, deliberately excluding % and $
   p = string.gsub(p, "([%^%(%)%.%[%]%*%+%-%?])", "%%%1")
-  -- 2. indexed placeholders first (%1$s), so they are not eaten by step 3
-  p = string.gsub(p, "%%(%d)%$s", "(.-)")
-  p = string.gsub(p, "%%(%d)%$d", "(%%d+)")
-  -- 3. plain placeholders. %s is non-greedy so adjacent captures split.
-  p = string.gsub(p, "%%s", "(.-)")
-  p = string.gsub(p, "%%d", "(%%d+)")
-  -- 4. any leftover literal $
+  -- 2. every placeholder becomes a SENTINEL, not its final pattern.
+  --
+  -- Substituting the real pattern here would be self-destructive: the indexed
+  -- pass emits "(%d+)", and the plain "%d" pass that follows would then match
+  -- the %d inside it and produce "((%d+)+)". Sentinels are inert.
+  p = string.gsub(p, "%%(%d)%$s", "\1")
+  p = string.gsub(p, "%%(%d)%$d", "\2")
+  p = string.gsub(p, "%%s", "\1")
+  p = string.gsub(p, "%%d", "\2")
+  -- 3. any leftover literal $
   p = string.gsub(p, "%$", "%%$")
+  -- 4. sentinels -> captures
+  p = string.gsub(p, "\1", "(.-)")
+  p = string.gsub(p, "\2", "(%%d+)")
   return "^" .. p .. "$"
 end
 

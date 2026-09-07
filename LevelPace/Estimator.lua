@@ -76,6 +76,10 @@ function Estimator:Update(state)
   r.baseRate = baseRate
   r.baseRatePerHour = baseRate and (baseRate * 3600) or nil
 
+  -- Kill-only rate, kept separate: this is what quests are compared against.
+  r.killRate = state.killRate
+  r.killRatePerHour = state.killRate and (state.killRate * 3600) or nil
+
   -- ---- rested-aware projection ----
   --
   -- The subtlety: a pool of P does not supply P XP, it supplies 2P XP in
@@ -146,6 +150,7 @@ function Estimator:Refresh()
     xpMax = UnitXPMax("player"),
     restedPool = M and M:GetRestedPool() or 0,
     baseRateSamples = H and H:BaseRateSamples() or {},
+    killRate = H and H:LiveKillRate() or nil,
     killXPSamples = H and H:KillXPSamples() or {},
     historyRate = H and H:MedianBaseRate() or nil,
     observedFraction = H and H:ObservedFraction() or 0,
@@ -156,11 +161,12 @@ function Estimator:Refresh()
   })
 end
 
--- Base XP per minute, the unit the quest ranker compares against.
+-- Base KILL XP per minute -- the unit the quest ranker compares against.
+-- Deliberately not baseRate: see History:LiveKillRate.
 function Estimator:GrindXPPerMinute()
   local r = self.result
-  if not r or not r.baseRate then return nil end
-  return r.baseRate * 60
+  if not r or not r.killRate then return nil end
+  return r.killRate * 60
 end
 
 LP:On("XP_EVENT", function() Estimator:Refresh() end)

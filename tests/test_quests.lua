@@ -15,9 +15,11 @@ local function load()
   return LP
 end
 
+-- isComplete mirrors the real 3.3.5a return: 1 = complete, -1 = failed, nil.
 local function quest(id, title, xp, objectives, complete)
   return { title = title, level = 71, questID = id, xp = xp,
-           isComplete = complete, objectives = objectives }
+           isComplete = (complete == true and 1) or complete or nil,
+           objectives = objectives }
 end
 
 -- ==== objective parsing ====
@@ -258,7 +260,8 @@ end)
 -- baseline must reflect that or quests look better than they are.
 h.run("grind baseline doubles while rested", function()
   local LP = load()
-  LP.Estimator:Update({ xp = 0, xpMax = 100000, baseRateSamples = { 10 }, observedFraction = 1 })
+  LP.Estimator:Update({ xp = 0, xpMax = 100000, baseRateSamples = { 10 },
+                        killRate = 10, observedFraction = 1 })
   h.state.rested = nil
   local plain = LP.Quests:GrindBaseline()
   h.near(plain, 600, 1, "10/s is 600/min")
@@ -272,6 +275,21 @@ h.run("grind baseline is nil before any rate is measured", function()
   local LP = load()
   LP.Estimator:Update({ xp = 0, xpMax = 100000, baseRateSamples = {}, observedFraction = 0 })
   h.eq(LP.Quests:GrindBaseline(), nil, "unknown, not zero")
+end)
+
+-- THE BUG: History.baseXP summed quest XP into the very rate that quests are
+-- judged against, so a big turn-in inflated its own baseline.
+h.run("quest XP must NOT inflate the grind baseline", function()
+  local LP = load()
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 100 experience.")   -- 100 kill xp
+  local killOnly = LP.History:LiveKillRate()
+  LP.Ledger:NoteQuestFinished(1, 5000)
+  LP.Ledger:OnChat("You gain 50000 experience.")             -- a huge turn-in
+  h.near(LP.History:LiveKillRate(), killOnly, 0.001,
+         "a 50k quest turn-in leaves the kill rate untouched")
+  h.ok(LP.History:LiveBaseRate() > LP.History:LiveKillRate(),
+       "the all-sources rate DOES include it, for time-to-level")
 end)
 
 
@@ -330,6 +348,66 @@ h.run("the fallback learner is fed the BLIZZLIKE xp, never GetRewardXP", functio
   local samples = LP.Rates.questSamples
   h.eq(#samples, 1, "one fallback sample")
   h.near(samples[1], 5.0, 0.001, "21000 / 4200 = x5, NOT 21000 / 21000 = x1")
+end)
+
+
+-- Review finding: isComplete is -1 for FAILED, which is truthy in Lua, so
+-- failed quests were being offered as "ready to turn in".
+h.run("a FAILED quest is not offered as ready to turn in", function()
+  local LP = load()
+  h.state.questLog = { quest(401, "Doomed escort", 5000, { { text = "Escort" } }, -1) }
+  local out = LP.Quests:Scan()
+  h.eq(out[1].complete, false, "not complete")
+  h.eq(out[1].failed, true, "flagged as failed")
+  local r = LP.Quests:Rank(100)
+  h.eq(#r.ready, 0, "not in the turn-in list")
+end)
+
+-- Review finding: effort was anchored on the moment the quest was first SEEN,
+-- so a quest sat in the log for an hour before you started it looked useless.
+h.run("effort is timed from the first real progress, not from first sighting", function()
+  local LP = load()
+  h.state.questLog = { quest(101, "Kill Ghouls", 1000, { { text = "Ghoul slain: 0/10" } }) }
+  LP.Quests:Scan()
+  h.advance(3600)                      -- carried the quest for an hour, untouched
+  for i = 1, 3 do
+    h.advance(20)                      -- then actually killed at 20s each
+    h.state.questLog[1].objectives[1].text = "Ghoul slain: " .. i .. "/10"
+    LP.Quests:Scan()
+  end
+  local minutes, tier = LP.Quests:EstimateMinutes(101)
+  h.eq(tier, "measured", "measured")
+  h.near(minutes, 140 / 60, 0.2,
+         "seven left at ~20s each -- the idle hour is NOT charged to the quest")
+end)
+
+-- Review finding: with no grind rate measured there is nothing to be slower
+-- than, so claiming everything is slower is unearned.
+h.run("with no grind rate, quests are not declared slower than grinding", function()
+  local LP = load()
+  h.state.questLog = { quest(101, "A", 1000, { { text = "X: 0/5" } }) }
+  LP.Quests:Scan()
+  local r = LP.Quests:Rank(nil)
+  h.eq(#r.slower, 0, "nothing claimed slower")
+  h.eq(#r.worth, 1, "listed without a verdict")
+  h.eq(r.unranked, true, "flagged so the UI can say why")
+end)
+
+-- Review finding: progress records for turned-in quests grew all session.
+h.run("progress records for departed quests are pruned", function()
+  local LP = load()
+  local log = {}
+  for i = 1, 60 do
+    log[i] = quest(1000 + i, "Q" .. i, 100, { { text = "X: 0/5" } })
+  end
+  h.state.questLog = log
+  LP.Quests:Scan()
+  local n = 0; for _ in pairs(LP.Quests.progress) do n = n + 1 end
+  h.eq(n, 60, "all tracked while in the log")
+  h.state.questLog = {}
+  LP.Quests:Scan()
+  local after = 0; for _ in pairs(LP.Quests.progress) do after = after + 1 end
+  h.ok(after <= 40, "bounded after they leave the log (" .. after .. ")")
 end)
 
 os.exit(h.report() and 0 or 1)

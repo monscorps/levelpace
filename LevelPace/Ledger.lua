@@ -57,6 +57,19 @@ function Ledger:BuildPatterns()
   add("COMBATLOG_XPGAIN_EXHAUSTION5_GROUP", { "mobName", "total", "penaltyAmount", "penaltyType", "group" }, "kill")
   -- 3. named kill, no bonus, WITH group bonus
   add("COMBATLOG_XPGAIN_FIRSTPERSON_GROUP", { "mobName", "total", "group" }, "kill")
+  -- 3b. RAID variants. Same shapes with a trailing "-%d raid penalty".
+  --
+  -- These MUST come before the plain EXHAUSTION* entries: EXHAUSTION1_RAID
+  -- ends in "penalty)" just like EXHAUSTION4, so the plain penalty pattern
+  -- would swallow it and capture bonusType as "Rested bonus, -12 raid".
+  --
+  -- The raid penalty is captured but NOT subtracted -- the reported total is
+  -- already net of it, so treating it like a group bonus would double-count.
+  add("COMBATLOG_XPGAIN_EXHAUSTION1_RAID", { "mobName", "total", "bonusAmount", "bonusType", "raidPenalty" }, "kill")
+  add("COMBATLOG_XPGAIN_EXHAUSTION2_RAID", { "mobName", "total", "bonusAmount", "bonusType", "raidPenalty" }, "kill")
+  add("COMBATLOG_XPGAIN_EXHAUSTION4_RAID", { "mobName", "total", "penaltyAmount", "penaltyType", "raidPenalty" }, "kill")
+  add("COMBATLOG_XPGAIN_EXHAUSTION5_RAID", { "mobName", "total", "penaltyAmount", "penaltyType", "raidPenalty" }, "kill")
+  add("COMBATLOG_XPGAIN_FIRSTPERSON_RAID", { "mobName", "total", "raidPenalty" }, "kill")
   -- 4. named kill, rested/RAF bonus
   add("COMBATLOG_XPGAIN_EXHAUSTION1", { "mobName", "total", "bonusAmount", "bonusType" }, "kill")
   add("COMBATLOG_XPGAIN_EXHAUSTION2", { "mobName", "total", "bonusAmount", "bonusType" }, "kill")
@@ -67,7 +80,10 @@ function Ledger:BuildPatterns()
   add("COMBATLOG_XPGAIN_QUEST", { "total", "bonusAmount", "bonusType" }, "unnamed")
   -- 7. plain named kill
   add("COMBATLOG_XPGAIN_FIRSTPERSON", { "mobName", "total" }, "kill")
-  -- 8. plain unnamed -- quest AND exploration both look like this
+  -- 8. unnamed with a group bonus or raid penalty
+  add("COMBATLOG_XPGAIN_FIRSTPERSON_UNNAMED_GROUP", { "total", "group" }, "unnamed")
+  add("COMBATLOG_XPGAIN_FIRSTPERSON_UNNAMED_RAID", { "total", "raidPenalty" }, "unnamed")
+  -- 9. plain unnamed -- quest AND exploration both look like this
   add("COMBATLOG_XPGAIN_FIRSTPERSON_UNNAMED", { "total" }, "unnamed")
 
   self.patternCount = #patterns
@@ -111,7 +127,7 @@ end
 -- quest events.
 -- ---------------------------------------------------------------------------
 
-local armedQuest, armedExplore
+local armedQuest, armedExplore, lastConsumedAt
 
 function Ledger:NoteQuestFinished(questID, predictedXP)
   armedQuest = { questID = questID, predictedXP = predictedXP, at = GetTime() }
@@ -126,11 +142,13 @@ local function takeArmed()
   if armedQuest and (now - armedQuest.at) <= ATTRIBUTION_WINDOW then
     local a = armedQuest
     armedQuest = nil
+    lastConsumedAt = now
     return "quest", a
   end
   if armedExplore and (now - armedExplore.at) <= ATTRIBUTION_WINDOW then
     local a = armedExplore
     armedExplore = nil
+    lastConsumedAt = now
     return "explore", a
   end
   -- Expired arms are dropped so they cannot mis-attribute a later gain.
@@ -160,6 +178,8 @@ function Ledger:OnChat(msg)
     rested = rested,
     group = group,
     penalty = raw.penaltyAmount or 0,
+    -- Recorded for the tooltip only. The total is already net of it.
+    raidPenalty = raw.raidPenalty or 0,
     bonusType = raw.bonusType,
     mobName = raw.mobName,
   }
@@ -204,7 +224,14 @@ function Ledger:HandleSystem(msg)
   if sysQuestXP and string.match(msg, sysQuestXP) then
     -- Quest XP confirmed, but we may not know which quest. Arm without an ID
     -- so at least the source is right; Quests.lua arms the ID separately.
-    if not armedQuest then self:NoteQuestFinished(nil, nil) end
+    --
+    -- Do NOT re-arm if an arm was just consumed: this system line usually
+    -- ARRIVES AFTER the XP message it describes, and a fresh arm would then
+    -- steal the next unnamed gain -- typically a zone discovery -- and label
+    -- it quest XP.
+    local now = GetTime()
+    local justConsumed = lastConsumedAt and (now - lastConsumedAt) <= ATTRIBUTION_WINDOW
+    if not armedQuest and not justConsumed then self:NoteQuestFinished(nil, nil) end
     return "quest"
   end
   if sysQuestComplete and string.match(msg, sysQuestComplete) then

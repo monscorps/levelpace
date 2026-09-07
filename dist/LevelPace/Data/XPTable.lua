@@ -51,6 +51,11 @@ d.HEIRLOOM_XP[50255] = 5 -- Dread Pirate Ring (unique-equipped)
 -- Slots worth scanning for XP heirlooms.
 d.HEIRLOOM_SLOTS = { 3, 5, 11, 12 } -- shoulder, chest, finger1, finger2
 
+-- NOTE: BaseGain, GrayLevel and ZeroDifference below are tested REFERENCE
+-- DATA and are not currently wired to anything. Recovering Rate.XP.Kill from
+-- them would need the mob's level and the map's content tier, neither of
+-- which is obtainable honestly -- see the comment in Rates.lua.
+
 -- Trinity::XP::GetGrayLevel
 function d.GrayLevel(pl)
   if pl <= 5 then return 0 end

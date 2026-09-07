@@ -108,15 +108,19 @@ function Box:Relayout()
   end
 
   if p.layout == "compact" then
-    -- Everything on one line, values only, separated by a dot.
-    local width = 0
-    local first = visible[1]
+    -- One composed line. It is always written into rows[1] by Box:Update, so
+    -- rows[1] is what must be laid out -- using visible[1] instead meant that
+    -- unticking "Level" left the composed text in a hidden row and a stale
+    -- label showing.
+    local first = self.rows[1]
     if first then
+      first.label:ClearAllPoints()   -- stale anchors otherwise survive a
+      first.value:ClearAllPoints()   -- switch from stacked/full
       first.label:SetPoint("LEFT", f, "LEFT", pad, 0)
       first.label:Show()
-      width = 260
+      first.value:Hide()
     end
-    f:SetWidth(width > 0 and width or 120)
+    f:SetWidth(260)
     f:SetHeight(lineH + pad)
     return
   end

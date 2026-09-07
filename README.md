@@ -44,9 +44,9 @@ Two quest APIs disagree on purpose, and the disagreement *is* the answer:
 
 Their ratio is your server's quest multiplier, exactly. **Open any quest's reward panel once and it knows** — no turn-ins to wait for, no statistics. (A turn-in-observation fallback exists for the case where you never open a reward panel.)
 
-Kill XP is compared against the WotLK `BaseGain` formula, which is genuinely statistical and needs a few clean samples.
+The kill-side multiplier is deliberately *not* recovered — it would need the mob's level (absent from the chat message) and the zone's content tier, and a guessed multiplier is worse than none. Nothing needs it: your grind pace is measured directly from XP you actually received.
 
-Until it knows, it says so rather than showing you a confident wrong number.
+Until it knows something, it says so rather than showing you a confident wrong number.
 
 **Rested is modelled properly.** It is a 200% doubling, not the 150% the game's own tooltip claims, it draws from a finite pool, and it does **not** apply to quest XP. So being rested genuinely makes grinding better and does nothing for quests — and the projection accounts for the pool running dry mid-level.
 
@@ -59,7 +59,6 @@ These are real and worth knowing before you trust a number:
 - **Quests with no countable objective can't be timed.** Escorts, "speak to X", "explore Y" — there is no counter to watch, so LevelPace shows the XP and an explicit `?` rather than inventing a rate. They sort last.
 - **The quest rate needs one reward panel opened** before the ranking has real numbers. Until then quest XP is shown at blizzlike values and flagged. It persists per realm, so it's a one-time cost.
 - **Recruit-A-Friend is undetectable.** There is no 3.3.5a client API that reports whether RAF triple XP is active. If you have it, the learned rates absorb it after a short lag.
-- **Kill-rate learning is opportunistic.** It needs the mob's level, which the chat message doesn't carry, so samples are only taken when the mob was your target at death. Elite kills, grouped kills, and servers using per-creature XP modifiers are discarded rather than corrected.
 - **SavedVariables are written on logout, not continuously.** A client crash or Alt+F4 loses history since your last clean logout. There is no flush API on this client version.
 - **English is not required, but only the format strings are translated.** Parsing is built from your client's own global strings, so other locales work. The one exception is heirloom detection for *server-custom* items, which falls back to reading tooltip text.
 

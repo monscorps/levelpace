@@ -37,7 +37,6 @@ Rates.WINDOW = 20
 
 Rates.ratioSamples = {}   -- exact, from GetRewardXP / GetQuestLogRewardXP
 Rates.questSamples = {}   -- statistical fallback, from observed turn-in XP
-Rates.killSamples = {}
 
 local function realmKey()
   local ok, realm = pcall(function() return GetRealmName and GetRealmName() end)
@@ -48,11 +47,10 @@ function Rates:Load()
   if not LP.gdb then return end
   LP.gdb.rates = LP.gdb.rates or {}
   local key = realmKey()
-  LP.gdb.rates[key] = LP.gdb.rates[key] or { quest = {}, kill = {}, ratio = {} }
+  LP.gdb.rates[key] = LP.gdb.rates[key] or { quest = {}, ratio = {} }
   local store = LP.gdb.rates[key]
   store.ratio = store.ratio or {}
   self.questSamples = store.quest
-  self.killSamples = store.kill
   self.ratioSamples = store.ratio
 end
 
@@ -109,31 +107,28 @@ function Rates:QuestRateSource()
 end
 
 -- ---------------------------------------------------------------------------
--- Kill rate
+-- Kill rate: NOT IMPLEMENTED, deliberately.
 --
--- Needs the mob's level, which the chat message does not carry -- we only get
--- it when the killed mob was our target at death. Many kills yield no sample,
--- which is fine: a handful is enough.
+-- Recovering Rate.XP.Kill would mean comparing observed XP against the WotLK
+-- BaseGain formula, which needs two things we cannot get honestly:
+--
+--   * the mob's LEVEL -- the chat message does not carry it, and by the time
+--     the message arrives the target is gone;
+--   * the map's content tier (45 / 235 / 580) -- available only through map
+--     APIs with user-visible side effects.
+--
+-- Both would be guesses, and a guessed multiplier is worse than an absent
+-- one. Nothing in the addon needs it: time-to-level is measured empirically,
+-- and the quest rate -- the number the recommendation actually turns on -- is
+-- read exactly from GetRewardXP vs GetQuestLogRewardXP.
+--
+-- LP.data.BaseGain and friends remain in Data/XPTable.lua as tested reference
+-- data. They are not wired to anything.
 -- ---------------------------------------------------------------------------
-
-function Rates:AddKillSample(observedBase, expectedBase)
-  if type(observedBase) ~= "number" or type(expectedBase) ~= "number" then return end
-  if observedBase <= 0 or expectedBase <= 0 then return end
-  util.PushBounded(self.killSamples, observedBase / expectedBase, self.WINDOW)
-  LP:Fire("RATES_CHANGED")
-end
-
-function Rates:KillSampleCount() return #self.killSamples end
-
-function Rates:GetKillRate()
-  if #self.killSamples < self.MIN_SAMPLES then return nil end
-  return util.Median(self.killSamples)
-end
 
 function Rates:Reset()
   for i = #self.ratioSamples, 1, -1 do self.ratioSamples[i] = nil end
   for i = #self.questSamples, 1, -1 do self.questSamples[i] = nil end
-  for i = #self.killSamples, 1, -1 do self.killSamples[i] = nil end
   LP:Fire("RATES_CHANGED")
 end
 

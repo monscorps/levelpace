@@ -28,7 +28,8 @@ local function newRecord(level, now)
     deaths = 0,
     corpseRunSeconds = 0,
     restedConsumed = 0,
-    baseXP = 0,
+    baseXP = 0,      -- all sources, for time-to-level
+    killBaseXP = 0,  -- kills ONLY, for the quest-vs-grind baseline
     largestGap = 0,
     lastEventAt = now,
     zones = {},
@@ -98,6 +99,7 @@ function History:AddEvent(e)
 
   if e.source == "kill" then
     r.killCount = r.killCount + 1
+    r.killBaseXP = (r.killBaseXP or 0) + (e.base or 0)
     util.PushBounded(self.killXPSamples, e.base or 0, KILL_XP_WINDOW)
   elseif e.source == "quest" then
     r.questCount = r.questCount + 1
@@ -130,9 +132,16 @@ function History:OnDeath()
   self.diedAt = GetTime and GetTime() or 0
 end
 
+-- PLAYER_ALIVE fires when you RELEASE (you become a ghost) as well as when
+-- you are resurrected in place. Treating both as "alive again" recorded the
+-- release delay instead of the corpse run, so corpse-run time was always
+-- near zero -- and corpse runs are exactly what the user asked to count.
+--
+-- UnitIsGhost is the discriminator: still a ghost means this was a release.
 function History:OnResurrect()
   local r = self:Current()
   if not r or not self.diedAt then return end
+  if UnitIsGhost and UnitIsGhost("player") then return end
   local now = GetTime and GetTime() or 0
   r.corpseRunSeconds = r.corpseRunSeconds + (now - self.diedAt)
   self.diedAt = nil
@@ -187,6 +196,24 @@ function History:LiveBaseRate()
   local elapsed = self:Elapsed()
   if elapsed <= 0 then return nil end
   return r.baseXP / elapsed
+end
+
+-- The GRIND rate: base XP from KILLS ONLY, per second of wall clock.
+--
+-- This must never include quest XP. The quest ranker compares each quest
+-- against this number, and folding quest XP into it means comparing quests
+-- partly against themselves -- a big turn-in inflates the very baseline it is
+-- being judged against, and the recommendation quietly degrades toward
+-- "questing is not worth it" the more you quest.
+--
+-- Time-to-level still uses LiveBaseRate (all sources), because you really do
+-- keep gaining that XP.
+function History:LiveKillRate()
+  local r = self:Current()
+  if not r or not r.killBaseXP or r.killBaseXP <= 0 then return nil end
+  local elapsed = self:Elapsed()
+  if elapsed <= 0 then return nil end
+  return r.killBaseXP / elapsed
 end
 
 -- Kept as the Estimator's input shape. A single live value, not a window of

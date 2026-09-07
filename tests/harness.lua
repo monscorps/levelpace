@@ -91,6 +91,19 @@ local function installGlobals()
   _G.COMBATLOG_XPGAIN_EXHAUSTION4_GROUP   = "%s dies, you gain %d experience. (%s exp %s penalty, +%d group bonus)"
   _G.COMBATLOG_XPGAIN_EXHAUSTION5_GROUP   = "%s dies, you gain %d experience. (%s exp %s penalty, +%d group bonus)"
 
+  _G.COMBATLOG_XPGAIN_FIRSTPERSON_RAID          = "%s dies, you gain %d experience. (-%d raid penalty)"
+  _G.COMBATLOG_XPGAIN_FIRSTPERSON_UNNAMED_GROUP = "You gain %d experience. (+%d group bonus)"
+  _G.COMBATLOG_XPGAIN_FIRSTPERSON_UNNAMED_RAID  = "You gain %d experience. (-%d raid penalty)"
+  _G.COMBATLOG_XPGAIN_EXHAUSTION1_RAID          = "%s dies, you gain %d experience. (%s exp %s bonus, -%d raid penalty)"
+  _G.COMBATLOG_XPGAIN_EXHAUSTION2_RAID          = "%s dies, you gain %d experience. (%s exp %s bonus, -%d raid penalty)"
+  _G.COMBATLOG_XPGAIN_EXHAUSTION4_RAID          = "%s dies, you gain %d experience. (%s exp %s penalty, -%d raid penalty)"
+  _G.COMBATLOG_XPGAIN_EXHAUSTION5_RAID          = "%s dies, you gain %d experience. (%s exp %s penalty, -%d raid penalty)"
+
+  _G.UnitIsGhost = function() return harness.state.isGhost end
+  _G.UnitName = _G.UnitName or function() return harness.state.playerName or "Tester" end
+  _G.GetNumPartyMembers = function() return harness.state.partyMembers or 0 end
+  _G.GetNumRaidMembers = function() return harness.state.raidMembers or 0 end
+
   _G.ERR_QUEST_COMPLETE_S   = "%s completed."
   _G.ERR_QUEST_REWARD_EXP_I = "Experience gained: %d."
   _G.ERR_ZONE_EXPLORED_XP   = "Discovered %s: %d experience gained"

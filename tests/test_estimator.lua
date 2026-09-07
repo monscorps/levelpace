@@ -157,10 +157,20 @@ h.run("percent complete", function()
   h.near(r.percent, 25, 0.001, "25%")
 end)
 
-h.run("GrindXPPerMinute", function()
+-- The grind baseline is KILL xp only. Feeding it the all-sources rate means
+-- quests get compared partly against themselves.
+h.run("GrindXPPerMinute comes from the kill rate, not the all-sources rate", function()
   local LP = load()
-  est(LP, { baseRateSamples = { 10 } })
-  h.near(LP.Estimator:GrindXPPerMinute(), 600, 0.001, "10/s is 600/min")
+  est(LP, { baseRateSamples = { 10 }, killRate = 4 })
+  h.near(LP.Estimator:GrindXPPerMinute(), 240, 0.001, "4/s kill rate is 240/min")
+  h.near(LP.Estimator:Result().baseRatePerHour, 36000, 0.001,
+         "the all-sources rate is still reported separately for time-to-level")
+end)
+
+h.run("GrindXPPerMinute is nil when nothing has been killed", function()
+  local LP = load()
+  est(LP, { baseRateSamples = { 10 }, killRate = nil })
+  h.eq(LP.Estimator:GrindXPPerMinute(), nil, "quest-only XP does not create a grind rate")
 end)
 
 

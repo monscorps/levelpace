@@ -111,10 +111,15 @@ function Quests:Scan()
           title = title,
           level = level,
           xp = xp or 0,
-          complete = isComplete and true or false,
+          -- isComplete is 1 for complete, -1 for FAILED, nil otherwise. Both
+          -- 1 and -1 are truthy in Lua, so `isComplete and true` marked
+          -- failed quests as ready to turn in.
+          complete = (isComplete == 1 or isComplete == true),
+          failed = (isComplete == -1),
           objectives = objectives,
           countable = countable,
           remainingTicks = remaining,
+          objType = objectives[1] and objectives[1].objType or "unknown",
         }
       end
     end
@@ -137,6 +142,9 @@ function Quests:Scan()
     if q.questID then self.cache[q.questID] = q end
   end
   self.list = out
+  self._globalRates = nil   -- memo is only valid within one scan
+  self._ranking = nil
+  self:PruneProgress()
   LP:Fire("QUESTS_SCANNED", out)
   return out
 end
@@ -162,25 +170,47 @@ function Quests:NoteProgress(questID, doneCount, now)
 end
 
 -- Progress units per second on this specific quest, or nil.
+--
+-- Anchored on the FIRST REAL PROGRESS (ticks[2]), not on ticks[1].
+-- ticks[1] is merely the moment the quest was first seen in the log, which
+-- may be hours before you started it -- anchoring there charges all of that
+-- idle time to the quest and makes every long-held quest look worthless.
 function Quests:TickRate(questID)
   local p = self.progress[questID]
-  if not p or #p.ticks < 2 then return nil, 0 end
-  local first, last = p.ticks[1], p.ticks[#p.ticks]
+  if not p or #p.ticks < 3 then return nil, math.max(0, #(p and p.ticks or {}) - 1) end
+  local first, last = p.ticks[2], p.ticks[#p.ticks]
   local dt = last.t - first.t
   local dv = last.have - first.have
-  if dt <= 0 or dv <= 0 then return nil, #p.ticks - 1 end
-  return dv / dt, #p.ticks - 1
+  local increases = #p.ticks - 1
+  if dt <= 0 or dv <= 0 then return nil, increases end
+  return dv / dt, increases
 end
 
--- Median tick rate across every quest we have measured. Used to infer effort
--- for a quest we have barely started.
-function Quests:GlobalTickRate()
+-- Median tick rate across quests we have measured, BUCKETED BY OBJECTIVE
+-- TYPE. Killing 10 wolves and looting 8 herbs are not the same unit of work,
+-- so medianing them together produced an "inferred" number with no meaning.
+--
+-- Memoised per scan: this used to be recomputed for every quest in every
+-- ranking, and the ranking itself runs on every redraw.
+function Quests:GlobalTickRate(objType)
+  objType = objType or "any"
+  self._globalRates = self._globalRates or {}
+  if self._globalRates[objType] ~= nil then
+    local v = self._globalRates[objType]
+    return v ~= false and v or nil
+  end
   local rates = {}
   for questID in pairs(self.progress) do
-    local rate, ticks = self:TickRate(questID)
-    if rate and ticks >= MIN_TICKS_FOR_MEASURED then rates[#rates + 1] = rate end
+    local q = self.cache[questID]
+    local matches = (objType == "any") or (q and q.objType == objType)
+    if matches then
+      local rate, ticks = self:TickRate(questID)
+      if rate and ticks >= MIN_TICKS_FOR_MEASURED then rates[#rates + 1] = rate end
+    end
   end
-  return util.Median(rates)
+  local med = util.Median(rates)
+  self._globalRates[objType] = med or false
+  return med
 end
 
 -- Returns minutes, tier, reason.
@@ -201,12 +231,26 @@ function Quests:EstimateMinutes(questID)
     return q.remainingTicks / rate / 60, "measured", nil
   end
 
-  local global = self:GlobalTickRate()
+  -- Only infer from quests of the SAME objective type.
+  local global = self:GlobalTickRate(q.objType)
   if global and global > 0 then
-    return q.remainingTicks / global / 60, "inferred", "using your pace on other quests"
+    return q.remainingTicks / global / 60, "inferred", "using your pace on similar quests"
   end
 
   return nil, "unmeasurable", "not enough progress observed yet"
+end
+
+-- Progress records for quests no longer in the log (turned in, abandoned)
+-- would otherwise accumulate for the whole session. A bounded number of
+-- completed ones are kept because they still inform the inferred tier.
+local PROGRESS_KEEP = 40
+function Quests:PruneProgress()
+  local stale = {}
+  for questID in pairs(self.progress) do
+    if not self.cache[questID] then stale[#stale + 1] = questID end
+  end
+  local excess = #stale - PROGRESS_KEEP
+  for i = 1, excess do self.progress[stale[i]] = nil end
 end
 
 -- ---------------------------------------------------------------------------
@@ -243,7 +287,12 @@ function Quests:Rank(grindXPPerMin)
 
     if q.complete then
       ready[#ready + 1] = entry
-    elseif entry.xpPerMin and grindXPPerMin and entry.xpPerMin > grindXPPerMin then
+    elseif not grindXPPerMin then
+      -- No measured grind rate yet, so there is nothing to be slower THAN.
+      -- Filing everything under "slower than grinding" would be a claim we
+      -- have not earned.
+      worth[#worth + 1] = entry
+    elseif entry.xpPerMin and entry.xpPerMin > grindXPPerMin then
       worth[#worth + 1] = entry
     else
       slower[#slower + 1] = entry
@@ -260,7 +309,8 @@ function Quests:Rank(grindXPPerMin)
   table.sort(worth, byValue)
   table.sort(slower, byValue)
 
-  return { ready = ready, worth = worth, slower = slower, grindXPPerMin = grindXPPerMin }
+  return { ready = ready, worth = worth, slower = slower,
+           grindXPPerMin = grindXPPerMin, unranked = (grindXPPerMin == nil) }
 end
 
 -- The grind rate to compare against. Rested doubles kill XP but does NOT
@@ -303,7 +353,8 @@ function Quests:PrintRanking()
     end
   end
   if #r.worth > 0 then
-    LP:Print("|cff40e040Worth doing|r")
+    LP:Print(r.unranked and "|cffe0a040Your quests (no grind rate to compare against yet)|r"
+      or "|cff40e040Worth doing|r")
     for _, e in ipairs(r.worth) do LP:Print(fmt(e)) end
   end
   if #r.slower > 0 then
