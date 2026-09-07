@@ -1,0 +1,22 @@
+## Interface: 30300
+## Title: LevelPace
+## Notes: Honest XP tracking, time-to-level, and quest-vs-grind ranking.
+## Author: Dan
+## Version: 0.1.0
+## SavedVariables: LevelPaceDB
+## SavedVariablesPerCharacter: LevelPaceCharDB
+
+Core.lua
+Compat.lua
+Data\XPTable.lua
+Ledger.lua
+Modifiers.lua
+Rates.lua
+History.lua
+Estimator.lua
+Quests.lua
+UI\Bar.lua
+UI\Box.lua
+UI\Tooltip.lua
+UI\Options.lua
+Init.lua

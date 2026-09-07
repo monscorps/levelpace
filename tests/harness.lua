@@ -166,6 +166,24 @@ local function installGlobals()
   _G.GetTitleText = function() return harness.state.questGiverTitle or "" end
   _G.GetQuestLogRewardMoney = function() return 0 end
 
+  -- ==== UI globals needed by the Bar/Box/Options modules ====
+  _G.ColorPickerFrame = stubFrame("ColorPickerFrame")
+  _G.ColorPickerFrame.GetColorRGB = function() return 1, 1, 1 end
+  _G.ColorPickerFrame.SetColorRGB = function() end
+  _G.OpacitySliderFrame = stubFrame("OpacitySliderFrame")
+  _G.OpacitySliderFrame.GetValue = function() return 0 end
+  _G.InterfaceOptions_AddCategory = function(panel)
+    harness.state.panels = harness.state.panels or {}
+    table.insert(harness.state.panels, panel)
+  end
+  _G.InterfaceOptionsFrame_OpenToCategory = function() end
+  _G.UIDropDownMenu_Initialize = function(f, fn) f.initFn = fn end
+  _G.UIDropDownMenu_CreateInfo = function() return {} end
+  _G.UIDropDownMenu_AddButton = function() end
+  _G.UIDropDownMenu_SetWidth = function() end
+  _G.UIDropDownMenu_SetText = function(f, t) f.dropText = t end
+  _G.GameFontNormal = {}
+
   _G.CreateFrame = function(_, name) return stubFrame(name) end
   _G.UIParent = stubFrame("UIParent")
   _G.GameTooltip = stubFrame("GameTooltip")

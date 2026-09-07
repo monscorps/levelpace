@@ -332,6 +332,19 @@ end
 
 Quests:BuildPatterns()
 
+-- Map the currently-open questgiver window back to a quest log ID by title.
+-- Returns nil when there is no match, which is fine: the rate learner only
+-- needs the predicted XP, not the ID.
+function Quests:ResolvePendingID()
+  if not GetTitleText then return nil end
+  local ok, title = pcall(GetTitleText)
+  if not ok or not title or title == "" then return nil end
+  for questID, q in pairs(self.cache) do
+    if q.title == title then return questID end
+  end
+  return nil
+end
+
 function Quests:Enable()
   self:BuildPatterns()
   if not CreateFrame then return end
@@ -355,7 +368,17 @@ function Quests:Enable()
   util.SafeRegisterEvent(f, "QUEST_FINISHED")
   local dirty = false
   f:SetScript("OnEvent", function(_, event)
-    if event == "QUEST_LOG_UPDATE" then dirty = true end
+    if event == "QUEST_LOG_UPDATE" then
+      dirty = true
+    elseif event == "QUEST_COMPLETE" then
+      -- The questgiver window is open and showing the quest we are about to
+      -- hand in. GetTitleText() is the only handle on WHICH quest it is --
+      -- there is no questgiver-side quest ID on 3.3.5a -- so match it back to
+      -- the log by title.
+      Quests.pendingQuestID = Quests:ResolvePendingID()
+    elseif event == "QUEST_FINISHED" then
+      Quests.pendingQuestID = nil
+    end
   end)
   -- Debounced: a full scan touches every quest and moves the log selection,
   -- so it must not run per frame.

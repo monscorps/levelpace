@@ -81,6 +81,7 @@ end
 function LP:StartDriver()
   if driver or not CreateFrame then return end
   driver = CreateFrame("Frame", "LevelPaceDriver")
+  LP.driverStarted = true
   driver:SetScript("OnUpdate", function(_, elapsed) LP:_Tick(elapsed) end)
 end
 
@@ -148,6 +149,7 @@ end
 function LP:Bootstrap()
   if not CreateFrame then return end
   local f = CreateFrame("Frame", "LevelPaceBootstrap")
+  LP.bootstrapFrame = f
   LP.util.SafeRegisterEvent(f, "ADDON_LOADED")
   LP.util.SafeRegisterEvent(f, "PLAYER_LOGIN")
   f:SetScript("OnEvent", function(_, event, arg1)
@@ -179,11 +181,13 @@ local function dispatch(input)
       LP:Print("options unavailable; try /lp quests")
     end
   elseif cmd == "reset" then
+    if not LP.db then LP:Print("not ready yet."); return end
     if LP.History then LP.History:Reset() end
     LP:Print("tracking reset for this level.")
   elseif cmd == "quests" then
     if LP.Quests then LP.Quests:PrintRanking() else LP:Print("quest module not loaded") end
   elseif cmd == "lock" or cmd == "unlock" then
+    if not LP.db then LP:Print("not ready yet."); return end
     LP.db.profile.locked = (cmd == "lock")
     LP:Fire("LOCK_CHANGED", LP.db.profile.locked)
     LP:Print(cmd == "lock" and "frames locked." or "frames unlocked -- drag to move.")
