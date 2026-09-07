@@ -184,7 +184,7 @@ function History:ObservedFraction()
   local r = self:Current()
   if not r then return 0 end
   local xpMax = (UnitXPMax and UnitXPMax("player")) or 0
-  if xpMax <= 0 then return 0 end
+  if xpMax <= 0 then return 0 end  -- max level
   local observed = (r.xpBySource.kill or 0) + (r.xpBySource.quest or 0)
     + (r.xpBySource.explore or 0) + (r.xpBySource.unknown or 0)
   local f = observed / xpMax

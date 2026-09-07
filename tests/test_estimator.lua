@@ -163,4 +163,29 @@ h.run("GrindXPPerMinute", function()
   h.near(LP.Estimator:GrindXPPerMinute(), 600, 0.001, "10/s is 600/min")
 end)
 
+
+-- At level 80 UnitXPMax reports 0. Every projection divides by it.
+h.run("max level is flagged, not divided by zero", function()
+  local r = est(load(), { xp = 0, xpMax = 0, baseRateSamples = { 10 } })
+  h.eq(r.maxLevel, true, "flagged")
+  h.eq(r.timeToLevel, nil, "no projection")
+  h.eq(r.percent, 0, "no percent")
+  h.ok(r.timeToLevel ~= math.huge, "never infinity")
+end)
+
+h.run("XP turned off at an NPC is flagged", function()
+  local r = est(load(), { xpDisabled = true, baseRateSamples = { 10 } })
+  h.eq(r.xpDisabled, true, "flagged")
+  h.eq(r.timeToLevel, nil, "no projection while XP is off")
+end)
+
+h.run("formatting survives a max-level result", function()
+  local LP = load()
+  h.state.level, h.state.xp, h.state.xpMax = 80, 0, 0
+  LP.Estimator:Update({ xp = 0, xpMax = 0 })
+  h.ok(pcall(function() return LP.util.FormatTime(LP.Estimator:Result().timeToLevel) end),
+       "FormatTime handles nil")
+  h.eq(LP.util.FormatTime(LP.Estimator:Result().timeToLevel), "--", "shows a dash")
+end)
+
 os.exit(h.report() and 0 or 1)

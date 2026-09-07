@@ -158,6 +158,21 @@ function Box:Values()
   local level = UnitLevel and UnitLevel("player") or 0
   local pool = LP.Modifiers and LP.Modifiers:GetRestedPool() or 0
 
+  if r.maxLevel then
+    return {
+      level = string.format("%d  (max)", level),
+      xpPerHour = "--", timeToLevel = "--", mobsToLevel = "--",
+      rested = "--", topQuest = "--",
+    }
+  end
+  if r.xpDisabled then
+    return {
+      level = string.format("%d  (XP off)", level),
+      xpPerHour = "--", timeToLevel = "XP is turned off", mobsToLevel = "--",
+      rested = "--", topQuest = "--",
+    }
+  end
+
   local mobs = "--"
   if r.mobsLow and r.mobsHigh then
     mobs = (r.mobsLow == r.mobsHigh) and tostring(r.mobsLow)

@@ -30,8 +30,29 @@ function Estimator:Update(state)
 
   local xpMax = state.xpMax or 0
   local xp = state.xp or 0
+
+  -- At max level UnitXPMax reports 0. Everything downstream divides by it, so
+  -- bail out with an explicit flag rather than producing 0s and inf.
+  if xpMax <= 0 then
+    r.maxLevel = true
+    r.confidence = "none"
+    r.percent = 0
+    r.xpRemaining = 0
+    return r
+  end
+
+  -- XP gain can also be switched off at an NPC, in which case no projection
+  -- means anything.
+  if state.xpDisabled then
+    r.xpDisabled = true
+    r.confidence = "none"
+    r.percent = xpMax > 0 and (xp / xpMax * 100) or 0
+    r.xpRemaining = math.max(0, xpMax - xp)
+    return r
+  end
+
   r.xpRemaining = math.max(0, xpMax - xp)
-  r.percent = xpMax > 0 and (xp / xpMax * 100) or 0
+  r.percent = xp / xpMax * 100
 
   -- Blend the current level's observed rate with the player's own history.
   -- Early in a level history dominates; late in a level observation does.
@@ -128,6 +149,7 @@ function Estimator:Refresh()
     killXPSamples = H and H:KillXPSamples() or {},
     historyRate = H and H:MedianBaseRate() or nil,
     observedFraction = H and H:ObservedFraction() or 0,
+    xpDisabled = M and M:IsXPDisabled() or false,
     largestGap = rec and rec.largestGap or 0,
     gapThreshold = LP.db and LP.db.profile.gapWarnSeconds or 600,
     countRested = LP.db and LP.db.profile.countRestedInProjection ~= false,
