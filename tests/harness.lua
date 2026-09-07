@@ -162,6 +162,10 @@ local function installGlobals()
     return o.text, o.type or "monster", o.finished
   end
 
+  _G.GetRewardXP = function() return harness.state.rewardXP or 0 end
+  _G.GetTitleText = function() return harness.state.questGiverTitle or "" end
+  _G.GetQuestLogRewardMoney = function() return 0 end
+
   _G.CreateFrame = function(_, name) return stubFrame(name) end
   _G.UIParent = stubFrame("UIParent")
   _G.GameTooltip = stubFrame("GameTooltip")
