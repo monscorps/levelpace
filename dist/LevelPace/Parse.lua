@@ -83,8 +83,29 @@ function Parse:PersonalBaseline(forLevel)
   return out
 end
 
+-- Adopt the uploader-written global distribution, if one is present.
+-- Per-level is preferred: comparing a level 71 against level 71s is far
+-- fairer than against the pooled distribution, which is dominated by
+-- whichever levels are cheapest.
+function Parse:LoadGeneratedBaseline(forLevel)
+  local b = _G.LevelPaceBaseline
+  if type(b) ~= "table" then return nil end
+  local byLevel = forLevel and b.byLevel and b.byLevel[forLevel]
+  if type(byLevel) == "table" and #byLevel >= self.MIN_BASELINE then
+    return byLevel, string.format("global, level %d (%d players)",
+      forLevel, b.players or 0)
+  end
+  if type(b.overall) == "table" and #b.overall >= self.MIN_BASELINE then
+    return b.overall, string.format("global, all levels (%d players)", b.players or 0)
+  end
+  return nil
+end
+
 function Parse:Baseline(forLevel)
   if self.baseline then return self.baseline, self.baselineLabel end
+
+  local global, glabel = self:LoadGeneratedBaseline(forLevel)
+  if global then return global, glabel end
   -- Same-level comparison is fairer but rarely has enough samples on one
   -- character, so fall back to all levels.
   local same = self:PersonalBaseline(forLevel)

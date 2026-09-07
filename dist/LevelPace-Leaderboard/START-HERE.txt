@@ -1,0 +1,74 @@
+LevelPace Leaderboard
+=====================
+
+*** THIS IS NOT AN ADDON. DO NOT PUT THIS FOLDER IN Interface\AddOns\ ***
+
+The WoW addon is a separate download (LevelPace.zip). This folder holds two
+ordinary Windows programs that run OUTSIDE the game.
+
+Why they exist at all: a WoW addon cannot use the internet. The Lua sandbox
+has no sockets and no HTTP. So the addon writes a file, and these programs
+carry it the rest of the way.
+
+  In the game            On your PC                 On a host
+  -----------            ----------                 ---------
+  LevelPace addon        run-uploader               run-server
+    writes its stats  ->   sends them            ->   stores + shows the board
+    reads Baseline.lua <-  writes Baseline.lua   <-   sends the global data
+
+The ONLY thing that ever goes near your addon folder is Baseline.lua, and the
+uploader writes that for you.
+
+
+WHAT GOES WHERE
+---------------
+
+  LevelPace.zip              -> C:\<WoW>\Interface\AddOns\LevelPace\
+  this folder                -> anywhere you like. Your desktop is fine.
+
+
+FIRST, YOU NEED PYTHON
+----------------------
+
+Both programs need Python 3.8 or newer. Get it from python.org.
+
+  IMPORTANT: on the first installer screen, tick "Add python.exe to PATH".
+  If you miss it the .bat files will say "Python was not found".
+
+Check it worked: open Command Prompt and type   python --version
+
+
+TRY IT ON YOUR OWN PC FIRST
+---------------------------
+
+You do not need a website or a server to try this. Run both locally:
+
+  1. Double-click  run-server.bat     -- leave this window open
+  2. Double-click  run-uploader.bat   -- it will ask where your WoW folder is
+  3. Open http://localhost:8080 in your browser
+
+That is a complete working leaderboard with only you on it.
+
+
+TO SHARE ANY DATA AT ALL
+------------------------
+
+Nothing is sent unless you switch it on IN THE GAME:
+
+  /lp  ->  Leaderboard  ->  "Share my levelling stats"
+
+Then log out (or type /reload). WoW only writes its saved-variables file on
+logout or /reload -- never while you are playing -- so the uploader has
+nothing to send until you do one of those.
+
+
+TO PUT IT ON THE INTERNET
+-------------------------
+
+run-server.bat is for testing on your own machine. For a real public board
+you want it on a host with a domain and HTTPS. See README.md.
+
+Please read the "Data, honestly" section of README.md before you invite other
+people. Two things matter: every number is supplied by the player's own
+client and therefore forgeable, and if other people send you their data then
+you are responsible for it.

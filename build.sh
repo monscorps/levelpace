@@ -15,4 +15,29 @@ find "$OUT/LevelPace" -type f \( -name '*.lua' -o -name '*.toc' -o -name '*.txt'
   done
 ( cd "$OUT" && zip -qr LevelPace.zip LevelPace )
 echo "built $OUT/LevelPace.zip"
-unzip -l "$OUT/LevelPace.zip" | tail -20
+
+# ---- leaderboard package -----------------------------------------------------
+# Everything under ONE clearly-named top folder. Shipping loose server/ and
+# uploader/ directories invited the reasonable question "which of these goes in
+# my AddOns folder?" -- the answer is none of them, and the packaging should
+# say so before anyone has to ask.
+LB="$OUT/LevelPace-Leaderboard"
+rm -rf "$LB" && mkdir -p "$LB"
+cp -R server "$LB/server"
+cp -R uploader "$LB/uploader"
+cp server/README.md "$LB/README.md"
+cp packaging/START-HERE.txt "$LB/START-HERE.txt"
+cp packaging/*.bat "$LB/"
+rm -rf "$LB"/server/__pycache__ "$LB"/uploader/__pycache__
+find "$LB" -name '*.db' -delete
+find "$LB" -name '*.db-wal' -delete
+find "$LB" -name '*.db-shm' -delete
+# CRLF for the files a Windows user will actually open in Notepad
+for f in "$LB/START-HERE.txt" "$LB/README.md" "$LB"/*.bat; do
+  [ -f "$f" ] && perl -pi -e 's/\r?\n/\r\n/' "$f"
+done
+# NOTE: no cleanup of an old lower-case "LevelPace-leaderboard.zip" here --
+# macOS is case-insensitive, so removing it removes the one just built.
+( cd "$OUT" && zip -qr LevelPace-Leaderboard.zip LevelPace-Leaderboard )
+echo "built $OUT/LevelPace-Leaderboard.zip"
+unzip -l "$OUT/LevelPace-Leaderboard.zip" | tail -16

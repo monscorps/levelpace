@@ -16,6 +16,8 @@ History.lua
 Estimator.lua
 Quests.lua
 Parse.lua
+Baseline.lua
+Export.lua
 UI\Bar.lua
 UI\Box.lua
 UI\Gauge.lua
