@@ -118,8 +118,12 @@ LP.defaults = {
       },
       lines = {
         level = true, xpPerHour = true, timeToLevel = true,
-        mobsToLevel = true, rested = true, topQuest = true,
+        mobsToLevel = true, rested = true, topQuest = true, parse = true,
       },
+    },
+    gauge = {
+      shown = false, width = 160, height = 16,
+      point = "CENTER", relPoint = "CENTER", x = 0, y = -215,
     },
     gapWarnSeconds = 600,
     countRestedInProjection = true,

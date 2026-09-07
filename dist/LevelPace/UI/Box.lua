@@ -24,6 +24,7 @@ Box.LINES = {
   { key = "mobsToLevel", label = "Mobs" },
   { key = "rested",      label = "Rested" },
   { key = "topQuest",    label = "Best quest" },
+  { key = "parse",       label = "Parse" },
 }
 
 function Box:Create()
@@ -166,14 +167,14 @@ function Box:Values()
     return {
       level = string.format("%d  (max)", level),
       xpPerHour = "--", timeToLevel = "--", mobsToLevel = "--",
-      rested = "--", topQuest = "--",
+      rested = "--", topQuest = "--", parse = "--",
     }
   end
   if r.xpDisabled then
     return {
       level = string.format("%d  (XP off)", level),
       xpPerHour = "--", timeToLevel = "XP is turned off", mobsToLevel = "--",
-      rested = "--", topQuest = "--",
+      rested = "--", topQuest = "--", parse = "--",
     }
   end
 
@@ -192,6 +193,7 @@ function Box:Values()
     mobsToLevel = mobs,
     rested = pool > 0 and util.FormatNumber(pool) or "none",
     topQuest = questLine(),
+    parse = LP.Parse and LP.Parse:Text() or "--",
   }
 end
 

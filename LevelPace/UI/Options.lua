@@ -234,6 +234,12 @@ function Options:BuildGeneral()
     function() return db.box.shown end,
     function(v) db.box.shown = v; if LP.Box then LP.Box:Update() end end))
   y = y - 28
+  track(p, makeCheck(p, "Show pace parse gauge", 16, y,
+    function() return db.gauge.shown end,
+    function(v) db.gauge.shown = v; if LP.Gauge then LP.Gauge:Update() end end))
+  y = y - 26
+  makeLabel(p, "Scores your pace 0-100 in WarcraftLogs colours.", 38, y, "GameFontDisableSmall")
+  y = y - 30
   track(p, makeCheck(p, "Lock frames (stop dragging)", 16, y,
     function() return db.locked end,
     function(v) db.locked = v end))
@@ -283,6 +289,8 @@ function Options:BuildAppearance()
   y = y - 44
   track(p, makeSlider(p, "Bar height", 16, y, 6, 40, 1,
     function() return db.bar.height end, function(v) db.bar.height = v end))
+  track(p, makeSlider(p, "Gauge width", 240, y, 80, 400, 5,
+    function() return db.gauge.width end, function(v) db.gauge.width = v end))
   y = y - 50
   track(p, makeDropdown(p, "Bar texture", 16, y, TEXTURES,
     function() return db.bar.texture end, function(v) db.bar.texture = v end))
