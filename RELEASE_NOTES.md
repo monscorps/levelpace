@@ -1,55 +1,64 @@
-# LevelPace 0.8.0 — the always-on meter
+# LevelPace 0.9.0 — the minimap button
 
-## `/lp meter`
+## Everything is behind one button now
 
-A panel that just sits there, like a damage meter.
+A black-and-purple icon on your minimap. Click it.
 
 ```
-+----------------------------------------------------+
-| BG damage                                          |
-+----------------------------------------------------+
-|  Ragebeard   ############################  412,000  |
-|> Grommash    #######################       356,000  |
-|  Ironhoof    ###################           298,000  |
-|  Blackfang   #################             271,000  |
-+----------------------------------------------------+
++----------------------------------+
+| LevelPace                        |
+|   [ ] Meter                      |
+|   [ ] Dashboard                  |
+|       Leaderboard                |
+|----------------------------------|
+| Modules                          |
+|   [x] LevelPace                  |
+|   [x] Rare Finder                |
+|   [x] Nemesis                    |
+|----------------------------------|
+|   [ ] Lock frames                |
+|       Options                    |
+|       Hide this button           |
++----------------------------------+
 ```
 
-- **Click the header** to change view, right-click to go back
-- **Drag it** anywhere, **drag the bottom-right corner** to resize
-- Position, size and view are remembered
-- `/lp lock` stops it moving, same as the other frames
+**Drag it** anywhere around the minimap ring; it stays where you put it.
 
-Views: **BG damage**, **BG healing**, **BG killing blows**, **Rare kills**,
-**Leaderboard**. It switches to BG damage by itself when you enter a
-battleground, the way a damage meter starts a new segment.
+The module toggles are checkboxes, so which ones are running is something you
+can see rather than something you have to remember. Ticking one keeps the menu
+open, so you can switch several without reopening it each time.
 
-**Bar length and colour mean different things.** Length is your share of the
-leader's number — how far behind you are. Colour is your percentile band —
-how good that actually is. Being 60% of the top damage in a strong team is
-not the same as 60% in a weak one, and one bar should not have to answer both.
+Every slash command still works. `/lp minimap` brings the button back if you
+hide it.
 
-Healing lists only players who actually healed. Ranking a rogue's zero against
-nine other zeroes is a number that looks like information and is not.
+## Also new since 0.7
+
+- **`/lp meter`** — an always-on panel that behaves like a damage meter.
+  Movable, resizable from the corner, click the header to change view.
+  BG damage, BG healing, killing blows, rare kills, leaderboard.
+- **Live battleground ranking** against your own team, in the WarcraftLogs
+  colour bands. Bar length is your share of the leader; bar colour is your
+  percentile. Those are different questions.
+- **Achievement icons** for all 14 PvP achievements.
 
 ## Fixed
 
-**The companion did nothing.** Double-clicking `LevelPace Companion.bat`
-flashed a window and closed with no tray icon. The launcher searched its own
-file for a `#PSSTART` marker, but the launcher line itself contained that
-text — so it found itself, and PowerShell was handed `exit /b` as its second
-statement. `exit` is a PowerShell keyword, so it quit before starting.
+**The companion never started.** Two problems in the launcher, one of them
+fatal: it searched its own file for a marker that its own command line
+contained, so PowerShell was handed a batch directive and quit before doing
+anything. The build now refuses to package a launcher it cannot prove starts.
 
-The build now refuses to produce a zip unless the launcher provably extracts,
-parses, and creates a tray icon.
+If it still does nothing, run **`LevelPace Companion (SHOW ERRORS).bat`** from
+the same folder. Same program, but the window stays open and prints exactly
+what went wrong.
 
-**Turning a module off didn't stick.** Two separate bugs: the disable only
-looked for frames stored in one field name and so never hid the XP bar or the
-gauge at all, and whatever it *did* hide came straight back on the next tick.
+**Turning a module off didn't stick** — the XP bar and gauge were never hidden
+at all, and whatever was hidden came back a second later.
 
 ## Installing
 
-Unzip into `Interface\AddOns\`. You should end up with
+Unzip `LevelPace.zip` into `Interface\AddOns\`. You should end up with
 `Interface\AddOns\LevelPace\LevelPace.toc`.
 
-`/lp modules` to check all three loaded, `/lp meter` to put the panel up.
+The minimap button appears at the bottom-left of your minimap. Everything is
+behind it.

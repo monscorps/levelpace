@@ -127,6 +127,21 @@ local function installGlobals()
   _G.COMBATLOG_XPGAIN_EXHAUSTION4_RAID          = "%s dies, you gain %d experience. (%s exp %s penalty, -%d raid penalty)"
   _G.COMBATLOG_XPGAIN_EXHAUSTION5_RAID          = "%s dies, you gain %d experience. (%s exp %s penalty, -%d raid penalty)"
 
+  -- Minimap and dropdown menu surfaces.
+  _G.Minimap = _G.Minimap or stubFrame("Minimap")
+  _G.Minimap.GetCenter = function() return 100, 100 end
+  _G.GetCursorPosition = function()
+    local c = harness.state.cursor or { x = 100, y = 100 }
+    return c.x, c.y
+  end
+  _G.UIDropDownMenu_Initialize = function(frame, fn) harness.state.menuInit = fn end
+  _G.UIDropDownMenu_CreateInfo = function() return {} end
+  _G.UIDropDownMenu_AddButton = function(info)
+    harness.state.menuButtons = harness.state.menuButtons or {}
+    table.insert(harness.state.menuButtons, info)
+  end
+  _G.ToggleDropDownMenu = function() harness.state.menuToggled = true end
+
   _G.UnitIsGhost = function() return harness.state.isGhost end
   _G.UnitName = function(unit)
     local named = (harness.state.unitNames or {})[unit]

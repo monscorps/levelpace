@@ -466,6 +466,11 @@ local function dispatch(input)
     LP:Fire("TOGGLE_SHOWN", true)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
+  elseif cmd == "minimap" or cmd == "mm" then
+    if LP.Minimap then
+      LP.Minimap:Toggle()
+      LP:Print("minimap button " .. (LP.Minimap:IsShown() and "shown" or "hidden"))
+    else LP:Print("minimap button not loaded") end
   elseif cmd == "meter" then
     if LP.Meter then
       LP.Meter:Toggle()
@@ -501,8 +506,8 @@ local function dispatch(input)
       LP:Print(id .. " is now " .. (now and "on" or "off"))
     end
   else
-    LP:Print("commands: meter, dash, board, rares, nemesis, modules,")
-    LP:Print("          toggle <id>, reset, quests, share, lock, unlock, debug")
+    LP:Print("commands: minimap, meter, dash, board, rares, nemesis,")
+    LP:Print("          modules, toggle <id>, reset, quests, share, lock, debug")
   end
   LP.lastCommand = cmd
 end

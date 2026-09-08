@@ -29,6 +29,7 @@ UI\Gauge.lua
 UI\Board.lua
 UI\Dash.lua
 UI\Meter.lua
+UI\Minimap.lua
 UI\Tooltip.lua
 UI\Options.lua
 Modules\LevelPace.lua
