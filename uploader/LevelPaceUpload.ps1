@@ -77,7 +77,18 @@ function Get-ConfiguredServer {
 
 function Get-ConfiguredToken {
     $v = Get-ConfiguredLines
-    if ($v.Count -ge 2) { return $v[1] }
+    # A URL on line 2 means the token was omitted, not that the token is a URL.
+    if ($v.Count -ge 2 -and $v[1] -notmatch '^https?://') { return $v[1] }
+    return $null
+}
+
+# Where to READ the board from. This needs no server of your own: GitHub Pages
+# serves it publicly, so /lp board works in game even when nothing is hosted.
+function Get-ConfiguredBaseline {
+    $v = Get-ConfiguredLines
+    foreach ($line in $v[1..([Math]::Max(1, $v.Count - 1))]) {
+        if ($line -match '^https?://') { return $line }
+    }
     return $null
 }
 
@@ -222,7 +233,7 @@ function Write-Baseline([string]$addonDir, $baseline, [string]$source) {
     in game without opening a browser. Same mechanism as Baseline.lua: the
     addon cannot fetch, so we fetch and it loads the file on next /reload.
 #>
-function Write-Board([string]$addonDir, $overall, $twinks, [string]$source) {
+function Write-Board([string]$addonDir, $overall, $twinks, [string]$source, $version) {
     $inv = [Globalization.CultureInfo]::InvariantCulture
 
     function LuaStr($s) {
@@ -247,6 +258,12 @@ function Write-Board([string]$addonDir, $overall, $twinks, [string]$source) {
     $lines.Add('LevelPaceBoard = {')
     $lines.Add(('  fetched = {0},' -f $epoch))
     $lines.Add(('  source = {0},' -f (LuaStr $source)))
+    if ($version) {
+        # The addon has no way to check for updates itself, so the version it
+        # should be on rides along with the board.
+        $lines.Add(('  addonVersion = {0},' -f (LuaStr $version.addonVersion)))
+        $lines.Add(('  downloadUrl = {0},' -f (LuaStr $version.downloadUrl)))
+    }
 
     $lines.Add('  overall = {')
     foreach ($e in @($overall) | Select-Object -First 100) {
@@ -336,8 +353,12 @@ function Invoke-Once {
             Write-Host ("  uploaded: {0} level(s) accepted, {1} rejected" -f $res.levels, $res.rejected) -ForegroundColor Green
             foreach ($e in $res.errors) { Write-Host ("  ! server: {0}" -f $e) -ForegroundColor Red }
         } catch {
+            # Deliberately NOT a hard exit. Reading the board and sending
+            # stats are independent: the board comes from GitHub Pages, which
+            # is up regardless. A failed upload should still leave you with
+            # current rankings in game.
             Write-Host ("  ! upload failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            return 2
+            Write-Host "    (carrying on -- the board below is fetched separately)" -ForegroundColor DarkGray
         }
     }
 
@@ -370,8 +391,15 @@ function Invoke-Once {
         $tw = $null
         try { $tw = Invoke-RestMethod -Uri $twUrl -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 30 } catch { }
 
-        $out = Write-Board $addon $lb.entries ($(if ($tw) { $tw.entries } else { @() })) $root
+        $ver = $null
+        $verUrl = if ($isStatic) { "$root/api/version.json" } else { "$root/api/stats" }
+        try { $ver = Invoke-RestMethod -Uri $verUrl -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 15 } catch { }
+
+        $out = Write-Board $addon $lb.entries ($(if ($tw) { $tw.entries } else { @() })) $root $ver
         Write-Host ("  board written: {0} ({1} ranked)" -f $out, @($lb.entries).Count) -ForegroundColor Green
+        if ($ver -and $ver.addonVersion) {
+            Write-Host ("  current addon version: {0}" -f $ver.addonVersion) -ForegroundColor DarkGray
+        }
     } catch {
         Write-Host ("  ! board fetch failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
     }
@@ -382,8 +410,9 @@ function Invoke-Once {
 
 # ---- main -------------------------------------------------------------------
 
-if (-not $Server) { $Server = Get-ConfiguredServer }
-if (-not $Token)  { $Token  = Get-ConfiguredToken }
+if (-not $Server)      { $Server      = Get-ConfiguredServer }
+if (-not $Token)       { $Token       = Get-ConfiguredToken }
+if (-not $BaselineUrl) { $BaselineUrl = Get-ConfiguredBaseline }
 
 if ($Forget) {
     try {

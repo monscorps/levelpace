@@ -70,6 +70,46 @@ h.run("a full kill-to-projection round trip", function()
   h.eq(LP.History:Current().killCount, 12, "kills recorded")
 end)
 
+-- Version comparison must be NUMERIC per segment. String comparison puts
+-- 0.10.0 below 0.9.0, which would tell everyone they are up to date forever
+-- at exactly the point releases start mattering.
+h.run("version comparison is numeric, not lexical", function()
+  for _, f in ipairs(tocFiles()) do h.load(f) end
+  local LP = _G.LevelPace
+  h.eq(LP:IsNewer("0.2.0", "0.1.0"), true, "minor bump")
+  h.eq(LP:IsNewer("0.10.0", "0.9.0"), true, "0.10 beats 0.9")
+  h.eq(LP:IsNewer("1.0.0", "0.99.99"), true, "major bump")
+  h.eq(LP:IsNewer("0.1.0", "0.1.0"), false, "same version is not newer")
+  h.eq(LP:IsNewer("0.1.0", "0.2.0"), false, "older is not newer")
+  h.eq(LP:IsNewer("0.1", "0.1.0"), false, "missing segments count as zero")
+  h.eq(LP:IsNewer("0.1.1", "0.1"), true, "and the reverse")
+  h.eq(LP:IsNewer(nil, "0.1.0"), false, "nil is safe")
+end)
+
+h.run("version nag fires only when actually behind", function()
+  for _, f in ipairs(tocFiles()) do h.load(f) end
+  local LP = _G.LevelPace
+  LP:InitDB(); LP:Fire("DB_READY")
+  local said = {}
+  LP.Print = function(_, ...) said[#said + 1] = tostring((select(1, ...))) end
+
+  _G.LevelPaceBoard = nil
+  LP:CheckVersion()
+  h.eq(#said, 0, "silent with no board data")
+
+  LP.VERSION = "0.3.0"
+  _G.LevelPaceBoard = { addonVersion = "0.3.0" }
+  LP:CheckVersion()
+  h.eq(#said, 0, "silent when up to date")
+
+  _G.LevelPaceBoard = { addonVersion = "0.4.0", downloadUrl = "https://example/releases" }
+  LP:CheckVersion()
+  h.eq(#said, 1, "one line when behind")
+  h.ok(said[1]:find("0.4.0", 1, true), "names the new version")
+  h.ok(said[1]:find("example", 1, true), "and where to get it")
+  _G.LevelPaceBoard = nil
+end)
+
 h.run("the in-game board opens with no data and says so", function()
   for _, f in ipairs(tocFiles()) do h.load(f) end
   local LP = _G.LevelPace

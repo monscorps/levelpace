@@ -713,7 +713,26 @@ def publish_static(store, out_dir, web_dir, base_url=None):
     now = int(time.time())
     stats = store.stats()
     stats["published"] = now
+
+    # Carry the current addon version so clients can notice they are stale.
+    # Read from the TOC rather than duplicated in a constant here -- one place
+    # to bump at release time, and no chance of the two drifting apart.
+    toc = Path(__file__).resolve().parent.parent / "LevelPace" / "LevelPace.toc"
+    version, download = None, None
+    if toc.is_file():
+        for line in toc.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.strip().startswith("## Version:"):
+                version = line.split(":", 1)[1].strip()
+                break
+    if base_url:
+        # Whatever repo published this page also publishes its releases.
+        m = re.match(r"https://([\w-]+)\.github\.io/([\w.-]+)", base_url.rstrip("/"))
+        if m:
+            download = "https://github.com/%s/%s/releases/latest" % (m.group(1), m.group(2))
+    stats["addonVersion"] = version
+    stats["downloadUrl"] = download
     dump("stats", stats)
+    dump("version", {"addonVersion": version, "downloadUrl": download, "published": now})
 
     baseline = store.baseline()
     dump("baseline", baseline)

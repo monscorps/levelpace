@@ -1,6 +1,27 @@
-# Put the server address here. The uploader reads this so nobody has to type it.
-# Examples:
-#   http://localhost:8080
-#   http://100.101.102.103:8080        (Tailscale)
-#   https://levelpace.example.com
+# LevelPace uploader configuration.
+#
+# Line 1 (required)  where to SEND stats
+# Line 2 (optional)  submission token, if the board requires one
+# Line 3 (optional)  where to READ the rankings from
+#
+# Only the person handing this folder out edits it. Recipients never do.
+#
+# ---------------------------------------------------------------------------
+# READING is already solved with no domain and no server: GitHub Pages serves
+# the board publicly. That is what fills in /lp board in game. Leave line 3 as
+# it is unless you move the site.
+#
+# SENDING is the part that needs somewhere to reach. Pick one:
+#
+#   Tailscale (no domain, free)   http://100.x.y.z:8080
+#   Cloudflare Tunnel (a domain)  https://levelpace.example.com
+#   Same network only             http://192.168.1.20:8080
+#   Nothing yet                   leave the default; uploads will simply fail
+#                                 and the board still reads fine
+# ---------------------------------------------------------------------------
+
 http://localhost:8080
+
+# token goes here on its own line if you set one on the server
+
+https://monscorps.github.io/levelpace/api/baseline.json
