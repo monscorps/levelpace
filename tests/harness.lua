@@ -72,7 +72,10 @@ harness.stubFrame = stubFrame
 local function installGlobals()
   _G.GetTime = function() return clock end
   _G.time = function() return math.floor(clock) end
-  _G.date = function() return "2026-09-08" end
+  -- WoW's date() mirrors os.date, including the "*t" form that returns a
+  -- TABLE with wday/hour/min/sec. Returning a bare string here hid a real
+  -- bug: a string is truthy, so an `if not t` guard passes and t.wday is nil.
+  _G.date = function(fmt, t) return os.date(fmt or "%c", t) end
 
   _G.strtrim = function(s) return (string.gsub(s, "^%s*(.-)%s*$", "%1")) end
   _G.strsplit = function(sep, str)

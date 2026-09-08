@@ -23,6 +23,10 @@
 [CmdletBinding()]
 param(
     [string]$Server,
+    # Where to READ the global baseline from. Defaults to the upload server,
+    # but pointing it at a GitHub Pages URL means the baseline still arrives
+    # when the upload server is off -- Pages is static and always up.
+    [string]$BaselineUrl,
     [string]$WowPath,
     [string]$File,
     [string]$AddonPath,
@@ -253,8 +257,11 @@ function Invoke-Once {
         Write-Host '  ! addon folder not found; skipping baseline (use -AddonPath)' -ForegroundColor DarkGray
         return 0
     }
+    # A Pages URL serves a flat file, so the path ends .json; a live server
+    # answers the API path.
+    $baseUri = if ($BaselineUrl) { $BaselineUrl } else { $Server.TrimEnd('/') + '/api/baseline' }
     try {
-        $base = Invoke-RestMethod -Uri ($Server.TrimEnd('/') + '/api/baseline') `
+        $base = Invoke-RestMethod -Uri $baseUri `
             -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 30
         $out = Write-Baseline $addon $base $Server
         Write-Host ("  baseline written: {0} ({1} players)" -f $out, $base.players) -ForegroundColor Green

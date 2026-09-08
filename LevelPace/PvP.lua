@@ -107,8 +107,11 @@ function PvP:WeekStart(now, resetWeekday, resetHour)
   resetHour = resetHour or 0
   if now <= 0 or not date then return 0 end
 
-  local t = date("*t", now)
-  if not t then return 0 end
+  -- type check, not a truthiness check: date() returns a STRING for every
+  -- format except "*t", and a string sails straight past `if not t`, so the
+  -- guard would pass and t.wday would then be nil arithmetic.
+  local ok, t = pcall(date, "*t", now)
+  if not ok or type(t) ~= "table" or type(t.wday) ~= "number" then return 0 end
 
   -- Seconds since the most recent reset weekday at resetHour.
   local daysSince = (t.wday - resetWeekday) % 7

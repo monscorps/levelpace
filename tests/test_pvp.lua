@@ -63,27 +63,29 @@ h.run("a different reset day gives a different week", function()
        "Wednesday reset and Sunday reset are not the same window")
 end)
 
+-- NOTE on ordering: boot() fires PLAYER_READY, which anchors the week
+-- immediately -- exactly as it does in game, where GetPVPLifetimeStats is
+-- already populated at login. So the kill count has to be set BEFORE boot(),
+-- or the anchor lands on zero and every existing kill counts as "this week".
+
 -- The first run cannot know how many existing kills happened this week.
 h.run("first run starts weekly at zero, not a whole career", function()
-  local LP = boot()
   h.state.lifetimeHK = 5000
-  LP.PvP:UpdateWeek()
+  local LP = boot()
   h.eq(LP.PvP:WeeklyKills(), 0, "5000 lifetime kills do not become this week's")
 end)
 
 h.run("weekly counts kills since the anchor", function()
-  local LP = boot()
   h.state.lifetimeHK = 5000
-  LP.PvP:UpdateWeek()
+  local LP = boot()
   h.state.lifetimeHK = 5042
   LP.PvP:UpdateWeek()
   h.eq(LP.PvP:WeeklyKills(), 42, "42 kills since the anchor")
 end)
 
 h.run("lifetime going backwards re-anchors instead of going negative", function()
-  local LP = boot()
   h.state.lifetimeHK = 5000
-  LP.PvP:UpdateWeek()
+  local LP = boot()
   h.state.lifetimeHK = 10          -- transfer, rollback, or another character
   LP.PvP:UpdateWeek()
   h.eq(LP.PvP:WeeklyKills(), 0, "never negative")
@@ -226,9 +228,8 @@ end)
 -- ==== payload ====
 
 h.run("payload carries the fields the board needs", function()
-  local LP = boot()
   h.state.lifetimeHK = 2400
-  LP.PvP:UpdateWeek()
+  local LP = boot()
   h.state.lifetimeHK = 2580
   LP.PvP:UpdateWeek()
   h.state.items = { [1] = { ilvl = 40, quality = 3 } }

@@ -661,6 +661,72 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def publish_static(store, out_dir, web_dir, base_url=None):
+    """Write the whole board out as flat files for GitHub Pages.
+
+    Pages cannot run the API, and it cannot vary a response on a query
+    string -- so every endpoint becomes a file, and ?level=N becomes
+    level-N.json. app.js resolves paths the same way when it sees the
+    LEVELPACE_STATIC flag injected below.
+
+    The point of doing this at all: the READ path stops depending on the
+    machine that takes the writes. The board stays up on a real HTTPS URL
+    whether or not that machine is on, and uploaders can fetch the baseline
+    from Pages without anything being reachable.
+    """
+    out = Path(out_dir)
+    api = out / "api"
+    api.mkdir(parents=True, exist_ok=True)
+
+    def dump(name, obj):
+        (api / (name + ".json")).write_text(
+            json.dumps(obj, separators=(",", ":")), encoding="utf-8")
+
+    now = int(time.time())
+    stats = store.stats()
+    stats["published"] = now
+    dump("stats", stats)
+
+    baseline = store.baseline()
+    dump("baseline", baseline)
+    dump("leaderboard", {"entries": store.leaderboard(None, 500)})
+    dump("twinks", {"entries": store.twinks(None, 500)})
+    dump("flagged", {"entries": store.flagged(500)})
+
+    levels = sorted(int(k) for k in (baseline.get("byLevel") or {}).keys())
+    for lvl in levels:
+        dump("level-%d" % lvl, {"entries": store.leaderboard(lvl, 500)})
+    dump("levels", {"levels": levels})
+
+    # Copy the page assets, injecting the static flag into index.html so the
+    # same app.js works in both modes without a build step.
+    web = Path(web_dir)
+    for name in ("app.css", "app.js"):
+        src = web / name
+        if src.is_file():
+            (out / name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    index = web / "index.html"
+    if index.is_file():
+        html = index.read_text(encoding="utf-8")
+        flag = ("<script>window.LEVELPACE_STATIC=true;"
+                "window.LEVELPACE_PUBLISHED=%d;</script>\n" % now)
+        html = html.replace('<script src="app.js"></script>',
+                            flag + '<script src="app.js"></script>')
+        (out / "index.html").write_text(html, encoding="utf-8")
+
+    # Stops GitHub Pages running the output through Jekyll, which would
+    # otherwise ignore any file or folder beginning with an underscore.
+    (out / ".nojekyll").write_text("", encoding="utf-8")
+
+    print("published to %s" % out)
+    print("  %d player(s), %d level(s), %d level board(s)"
+          % (stats["players"], stats["levels"], len(levels)))
+    if base_url:
+        print("  baseline URL for uploaders: %s/api/baseline.json" % base_url.rstrip("/"))
+    return 0
+
+
 def import_files(store, paths):
     """Ingest SavedVariables files directly, no uploader involved.
 
@@ -737,10 +803,18 @@ def main():
     ap.add_argument("--import", dest="import_paths", nargs="+", metavar="PATH",
                     help="ingest SavedVariables file(s) or folder(s) directly, "
                          "then exit -- for data a friend sent you")
+    ap.add_argument("--publish", metavar="DIR",
+                    help="write the whole board out as flat files for GitHub "
+                         "Pages, then exit (e.g. --publish docs)")
+    ap.add_argument("--base-url", help="public URL of the published site, "
+                                       "printed for convenience")
     args = ap.parse_args()
 
     if args.import_paths:
         return import_files(Store(args.db), args.import_paths)
+
+    if args.publish:
+        return publish_static(Store(args.db), args.publish, args.web, args.base_url)
 
     Handler.store = Store(args.db)
     Handler.limiter = RateLimiter(args.rate)
