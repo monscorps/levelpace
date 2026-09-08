@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="frost">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LevelPace — Parse Rankings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- Relative, not absolute: GitHub Pages may serve this from /<repo>/ rather
+     than the domain root, and /app.css would 404 there. -->
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+<div class="aurora" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>LevelPace</h1>
+      <p class="brand-sub"><em>parse rankings</em> — Wrath 3.3.5a</p>
+    </div>
+    <dl class="vitals" id="vitals">
+      <div><dt>sharing players</dt><dd id="v-players">—</dd></div>
+      <div><dt>levels logged</dt><dd id="v-levels">—</dd></div>
+      <div><dt>twinks</dt><dd id="v-pvp">—</dd></div>
+    </dl>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Leaderboards">
+  <button role="tab" class="tab is-active" data-view="overall" aria-selected="true">Overall</button>
+  <button role="tab" class="tab" data-view="level" aria-selected="false">By level</button>
+  <button role="tab" class="tab" data-view="twink" aria-selected="false">Twinks</button>
+  <div class="tab-tools">
+    <span class="snapshot" id="snapshot" hidden></span>
+    <label class="lvlpick" id="lvlpick" hidden>
+      <span>level</span>
+      <select id="level-select"></select>
+    </label>
+    <button class="ghost" id="refresh" title="Reload from the server">refresh</button>
+  </div>
+</nav>
+
+<main>
+  <section class="scale" aria-label="Parse colour scale">
+    <span class="scale-label">scale</span>
+    <ol class="scale-bands">
+      <li style="--c:var(--q-common)">0<i>common</i></li>
+      <li style="--c:var(--q-uncommon)">25<i>uncommon</i></li>
+      <li style="--c:var(--q-rare)">50<i>rare</i></li>
+      <li style="--c:var(--q-epic)">75<i>epic</i></li>
+      <li style="--c:var(--q-legendary)">95<i>legendary</i></li>
+      <li style="--c:var(--q-pink)">99<i>astounding</i></li>
+      <li style="--c:var(--q-artifact)">100<i>artifact</i></li>
+    </ol>
+  </section>
+
+  <div id="board" class="board" aria-live="polite"></div>
+
+  <p class="caveat">
+    <strong>This ranks LevelPace users, not the server.</strong>
+    Nobody appears here unless they installed the addon, switched sharing on,
+    and ran the uploader. A 100 parse means <em>fastest among the people on
+    this board</em> — it is not a claim about anyone else. There is no
+    alternative: time-per-level is not recorded anywhere server-side, so this
+    data exists only because the addon measured it while someone played.
+  </p>
+  <p class="caveat caveat--warn">
+    <strong>Every number is supplied by the player's own client.</strong>
+    The addon writes a file, an uploader sends it. Nothing is verified against
+    the game server, because nothing <em>can</em> be. Impossible values are
+    rejected; plausible lies are not detectable. Treat this as a scoreboard
+    among friends, not an audited ranking.
+  </p>
+</main>
+
+<footer>
+  <p>LevelPace · levels per hour, not XP per hour — so a level 20 and a level 78 are compared fairly.</p>
+</footer>
+
+<script>window.LEVELPACE_STATIC=true;window.LEVELPACE_PUBLISHED=1788827962;</script>
+<script src="app.js"></script>
+</body>
+</html>
