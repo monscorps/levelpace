@@ -1,0 +1,19 @@
+{
+  // LevelPace API. Deploy with:  npx wrangler deploy
+  //
+  // The database_id is a resource identifier, not a credential -- Cloudflare's
+  // own docs commit it. The submission secret is NOT here: it is set with
+  // `wrangler secret put`, so no secret ever reaches git or the chat log.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "levelpace",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "levelpace",
+      "database_id": "593b5aaa-e0d1-4932-9e79-d7684c944a4d"
+    }
+  ]
+}

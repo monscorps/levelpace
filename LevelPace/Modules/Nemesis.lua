@@ -380,6 +380,29 @@ end
 
 local POLL_SECONDS = 3
 
+-- What the companion uploads. Only the fields the board needs, and the
+-- lifetime/since-install distinction is preserved on the wire so the server
+-- cannot accidentally present one as the other.
+function N:Payload()
+  local st = self:Lifetime()
+  local out = {
+    honorableKills = st.honorableKills,
+    wins = st.wins,
+    losses = st.losses,
+    longestStreak = st.longestStreak,
+    winsAreLifetime = false,
+    nemeses = {},
+  }
+  local top = self:TopNemeses(10)
+  for i = 1, #top do
+    out.nemeses[i] = {
+      name = top[i].name, kills = top[i].kills,
+      deaths = top[i].deaths, guild = top[i].guild,
+    }
+  end
+  return out
+end
+
 function N:Dashboard()
   local s = self:Lifetime()
   local rows = {

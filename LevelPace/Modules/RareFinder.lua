@@ -204,6 +204,26 @@ end
 -- Module
 -- ---------------------------------------------------------------------------
 
+-- What the companion uploads: the kill log itself, capped so a long-lived
+-- character does not send a megabyte. EVERY kill is sent, not just first
+-- kills -- "X killed the Time-Lost Proto Drake again" is the point of a
+-- shared log, and dropping repeats would quietly remove it.
+RF.MAX_UPLOAD = 250
+
+function RF:Payload()
+  local kills = self:Kills()
+  local out = {}
+  local from = math.max(1, #kills - RF.MAX_UPLOAD + 1)
+  for i = from, #kills do
+    local k = kills[i]
+    out[#out + 1] = {
+      npc = k.npc, name = k.name, t = k.t,
+      mine = k.mine, learned = k.learned,
+    }
+  end
+  return out
+end
+
 function RF:Dashboard()
   local st = self:Stats()
   if st.total == 0 then

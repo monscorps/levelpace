@@ -17,7 +17,7 @@ local util = LP.util
 local Export = {}
 LP.Export = Export
 
-Export.SCHEMA = 1
+Export.SCHEMA = 2
 
 -- A stable pseudonymous id, generated once and kept account-wide. It exists
 -- so the server can update a character's record instead of duplicating it --
@@ -99,8 +99,23 @@ function Export:Write()
     id = self:EnsureID(),
     -- The display name is what appears on the board. Defaults to the
     -- character name; the player can set an alias instead.
+    -- IDENTITY, always sent, never displayed unless asked for.
+    --
+    -- The server derives char_id from name@realm and will not accept one
+    -- chosen by the client. Realm is part of that key so two players genuinely
+    -- named Thrall on different realms do not collide -- which means realm
+    -- cannot be optional, or those players lose both their identity and their
+    -- collision protection.
+    --
+    -- The privacy toggle still works: it now controls whether the realm is
+    -- SHOWN on the board, not whether it is sent. That distinction is stated
+    -- in the option's tooltip rather than left for someone to discover.
+    name = name,
+    realm = realm,
+    showRealm = share.shareRealm ~= false,
+
+    -- PRESENTATION only. Never an identity input.
     display = (share.alias ~= "" and share.alias) or name,
-    realm = share.shareRealm ~= false and realm or nil,
     class = share.shareClass ~= false and (select(2, UnitClass("player"))) or nil,
     faction = share.shareFaction ~= false and (UnitFactionGroup and UnitFactionGroup("player")) or nil,
     level = (UnitLevel and UnitLevel("player")) or nil,
@@ -113,6 +128,14 @@ function Export:Write()
     -- separate consent rather than something that rides along with levelling
     -- stats.
     pvp = (share.sharePvP and LP.PvP) and LP.PvP:Payload() or nil,
+
+    -- Nemesis rides the same consent as the rest of the PvP payload: it
+    -- contains other people's character names, who never agreed to anything.
+    nemesis = (share.sharePvP and LP.Nemesis) and LP.Nemesis:Payload() or nil,
+
+    -- Rare kills are only ever your own character's activity, so they share
+    -- the ordinary levelling consent.
+    rares = LP.RareFinder and LP.RareFinder:Payload() or nil,
   }
   LP.gdb.export[key] = blob
   self:WriteJSON()

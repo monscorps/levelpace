@@ -97,4 +97,43 @@ h.run("opting out clears what was already written", function()
   h.eq(LP.gdb.exportJSON, nil, "and removed on opt-out, not merely stale")
 end)
 
+-- ==== schema 2 identity fields ====
+
+h.run("name and realm are always sent, whatever the privacy setting", function()
+  local LP = boot()
+  h.state.playerName = "Thrall"
+  LP.db.profile.share.enabled = true
+
+  LP.db.profile.share.shareRealm = true
+  local blob = LP.Export:Write()
+  h.eq(blob.name, "Thrall", "name present")
+  h.ok(blob.realm, "realm present")
+  h.eq(blob.showRealm, true, "shown")
+
+  -- The toggle controls DISPLAY, not transmission: the server needs realm to
+  -- tell two same-named characters apart, and without it their identity key
+  -- is underivable and their collision protection disappears.
+  LP.db.profile.share.shareRealm = false
+  blob = LP.Export:Write()
+  h.eq(blob.name, "Thrall", "name still sent")
+  h.ok(blob.realm, "realm STILL sent")
+  h.eq(blob.showRealm, false, "but flagged not to display")
+end)
+
+h.run("display is presentation only and never replaces name", function()
+  local LP = boot()
+  h.state.playerName = "Thrall"
+  LP.db.profile.share.enabled = true
+  LP.db.profile.share.alias = "Warchief"
+  local blob = LP.Export:Write()
+  h.eq(blob.display, "Warchief", "alias is the display name")
+  h.eq(blob.name, "Thrall", "identity is untouched by the alias")
+end)
+
+h.run("the blob declares schema 2", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  h.eq(LP.Export:Write().schema, 2, "schema bumped for the identity fields")
+end)
+
 os.exit(h.report() and 0 or 1)

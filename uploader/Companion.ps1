@@ -53,6 +53,47 @@ function Write-Log([string]$msg) {
 # Config — server.txt sits beside this file
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Enrolment
+#
+# The old build shipped ONE shared token inside everybody's download, so
+# anyone who opened server.txt could submit as anyone. Instead, each install
+# asks the server for its own key on first run. The server keeps only a hash
+# of it, so a database dump contains nothing usable, and there is no master
+# secret to leak.
+#
+# No account, no email, no signup. The player does nothing.
+#
+# The key is NOT recoverable. Losing it means this machine can no longer add
+# to that character's history -- the history itself stays on the board.
+# ---------------------------------------------------------------------------
+
+function Get-KeyPath {
+    $dir = Join-Path $env:LOCALAPPDATA 'LevelPace'
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    return (Join-Path $dir 'install.key')
+}
+
+function Get-InstallKey($server) {
+    $path = Get-KeyPath
+    if (Test-Path $path) {
+        $k = (Get-Content $path -Raw).Trim()
+        if ($k) { return $k }
+    }
+    try {
+        $res = Invoke-RestMethod -Uri ($server.TrimEnd('/') + '/api/enrol') -Method Post `
+                 -UserAgent "LevelPaceCompanion/$Version" -TimeoutSec 20
+        if ($res.key) {
+            Set-Content -Path $path -Value $res.key -NoNewline -Encoding ascii
+            Write-Log "enrolled with the leaderboard; key stored in $path"
+            return $res.key
+        }
+    } catch {
+        Write-Log ("could not enrol: {0}" -f $_.Exception.Message)
+    }
+    return $null
+}
+
 function Get-Config {
     $vals = @()
     foreach ($dir in @($Root, (Split-Path -Parent $Root))) {
@@ -292,13 +333,37 @@ function Invoke-Sync([switch]$Quiet) {
     } else {
         $merged = '[' + (($payloads | ForEach-Object { $_.Trim().TrimStart('[').TrimEnd(']') }) -join ',') + ']'
         $headers = @{}
-        if ($cfg.Token) { $headers['X-LevelPace-Token'] = $cfg.Token }
+        $key = Get-InstallKey $cfg.Server
+        if ($key) {
+            $headers['Authorization'] = "Bearer $key"
+        } elseif ($cfg.Token) {
+            # No key yet (offline during enrolment, or an older server). The
+            # legacy token still gets the data accepted, but the server
+            # quarantines it: stored, never ranked, until the key arrives.
+            $headers['X-LevelPace-Token'] = $cfg.Token
+        }
         try {
             $res = Invoke-RestMethod -Uri ($cfg.Server.TrimEnd('/') + '/api/submit') -Method Post `
                 -Body $merged -ContentType 'application/json' -Headers $headers `
                 -UserAgent "LevelPaceCompanion/$Version" -TimeoutSec 30
-            $sent = [int]$res.levels
-            Write-Log ("uploaded {0} level(s), {1} rejected" -f $res.levels, $res.rejected)
+            if ($res.quarantined) {
+                Write-Log "accepted but NOT ranked -- this install has not enrolled yet"
+                $sent = 0
+            } elseif ($res.results) {
+                $sent = 0
+                foreach ($r in $res.results) {
+                    if ($r.error) {
+                        Write-Log ("{0}: {1}" -f $r.char, $r.error)
+                    } else {
+                        $sent += [int]$r.accepted.levels
+                        Write-Log ("{0}: {1} level(s), {2} rare kill(s), {3} rejected" -f `
+                            $r.char, $r.accepted.levels, $r.accepted.rares, $r.rejected)
+                    }
+                }
+            } else {
+                $sent = [int]$res.levels
+                Write-Log ("uploaded {0} level(s), {1} rejected" -f $res.levels, $res.rejected)
+            }
         } catch {
             $ok = $false
             Write-Log ("upload FAILED: {0}" -f $_.Exception.Message)

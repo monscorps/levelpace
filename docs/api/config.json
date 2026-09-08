@@ -1,1 +1,4 @@
-{"uploadUrl":"https://elite-joins-passion-walking.trycloudflare.com","published":1788902659,"note":"uploadUrl may change; clients read it here rather than relying on the address bundled in their download"}
+{
+  "uploadUrl": "https://levelpace.andustemme.workers.dev",
+  "note": "Cloudflare Worker. Stable: this address does not change, unlike the quick tunnel it replaced. Companions read it here on every sync."
+}

@@ -1,4 +1,4 @@
-# LevelPace uploader configuration.
+https://levelpace.andustemme.workers.dev
 #
 # Non-comment lines, in order:
 #   1  where to SEND your stats
