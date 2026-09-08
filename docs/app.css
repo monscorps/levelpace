@@ -100,6 +100,22 @@ header, nav, main, footer { position: relative; z-index: 2; }
 .brand-sub { margin: 0.15rem 0 0; color: var(--text-dim); font-size: 0.8rem; letter-spacing: 0.02em; }
 .brand-sub em { font-family: var(--serif); font-style: italic; color: var(--frost); font-size: 0.95rem; }
 
+/* The board is where people land; the download is what most of them came
+   for. Gold, because it is the one action on the page. */
+.getit {
+  align-self: center;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .12em;
+  color: var(--q-artifact); text-decoration: none;
+  border: 1px solid color-mix(in srgb, var(--q-artifact) 45%, transparent);
+  padding: .55rem 1rem; white-space: nowrap;
+  transition: background .18s, border-color .18s;
+}
+.getit:hover {
+  background: color-mix(in srgb, var(--q-artifact) 12%, transparent);
+  border-color: var(--q-artifact);
+}
+.getit span { margin-left: .35rem; }
+
 .vitals { display: flex; gap: 2.25rem; margin: 0; }
 .vitals dt { color: var(--text-faint); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.14em; }
 .vitals dd {

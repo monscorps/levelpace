@@ -277,6 +277,13 @@
       document.getElementById("v-levels").textContent = fmt(s.levels);
       document.getElementById("v-pvp").textContent = fmt(s.pvp);
       showSnapshotAge(s.published);
+      // The publisher derives the releases URL from the Pages URL, so this
+      // stays correct if the repo is ever renamed or moved.
+      var get = document.getElementById("getit");
+      if (get && s.downloadUrl) {
+        get.href = s.downloadUrl;
+        if (s.addonVersion) get.firstChild.nodeValue = "Get the addon " + s.addonVersion + " ";
+      }
     }).catch(function () {});
   }
 
