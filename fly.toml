@@ -1,0 +1,40 @@
+# Fly.io deployment for the LevelPace leaderboard.
+#
+#   fly launch --no-deploy --name levelpace
+#   fly volumes create levelpace_data --size 1 --region lhr
+#   fly secrets set LEVELPACE_TOKEN="$(cat .token)"
+#   fly deploy
+#
+# Gives you https://levelpace.fly.dev with no domain to buy and nothing for
+# players to install.
+
+app = "levelpace"
+primary_region = "lhr"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # Sleep when idle, wake on the next request. A cold start costs a second or
+  # two, which nobody notices on an upload that happens after they log out --
+  # and it keeps this comfortably inside the free allowance.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+# SQLite lives here. Without a volume the database is on the container
+# filesystem and every deploy silently wipes the entire leaderboard.
+[mounts]
+  source = "levelpace_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -72,6 +72,32 @@ function Get-Config {
         if ($v -match '^https?://') { if (-not $base) { $base = $v } }
         elseif (-not $token) { $token = $v }
     }
+
+    # The upload address can move. A Cloudflare quick tunnel gets a new URL
+    # every time it restarts, and re-sending everyone a new download each
+    # time is obviously untenable -- so the CURRENT address is published
+    # alongside the board, and looked up here.
+    #
+    # The baked-in server.txt value is the fallback, used when the lookup
+    # fails or is not configured. That keeps a fixed address working exactly
+    # as before.
+    if ($base) {
+        try {
+            $cfgUrl = ($base -replace '/api/baseline\.json$', '') + '/api/config.json'
+            $remote = Invoke-RestMethod -Uri $cfgUrl -TimeoutSec 12 `
+                        -UserAgent "LevelPaceCompanion/$Version"
+            if ($remote.uploadUrl -and $remote.uploadUrl -match '^https?://') {
+                if ($remote.uploadUrl -ne $server) {
+                    Write-Log ("upload address from config: {0}" -f $remote.uploadUrl)
+                }
+                $server = $remote.uploadUrl
+            }
+            if ($remote.token) { $token = $remote.token }
+        } catch {
+            # Offline, or no config published. Fall back to server.txt.
+        }
+    }
+
     return @{ Server = $server; Token = $token; Baseline = $base }
 }
 
