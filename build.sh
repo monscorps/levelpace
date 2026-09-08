@@ -33,7 +33,20 @@ cp packaging/START-HERE.txt "$LB/START-HERE.txt"
 cp packaging/FOR-YOUR-MATES.txt "$LB/FOR-YOUR-MATES.txt"
 cp packaging/*.bat "$LB/"
 cp packaging/*.command "$LB/" 2>/dev/null || true
-cp packaging/server.txt "$LB/server.txt"
+# server.txt: the address lives in the committed template, the TOKEN does not.
+# A file called .token at the repo root (gitignored) is injected right after
+# the address line, so the distributed folder carries the secret while git
+# never sees it -- and a rebuild cannot silently drop it either.
+if [ -f .token ]; then
+  awk -v tok="$(head -1 .token | tr -d '\r\n')" '
+    !inserted && NF && $0 !~ /^#/ { print; print tok; inserted=1; next }
+    { print }
+  ' packaging/server.txt > "$LB/server.txt"
+  echo "  server.txt: token injected"
+else
+  cp packaging/server.txt "$LB/server.txt"
+  echo "  server.txt: NO token (create .token at the repo root if the server needs one)"
+fi
 mkdir -p "$LB/inbox"
 printf 'Drop a friend LevelPace.lua here (subfolders are fine), then run\nimport-inbox.command, or:\n\n  python3 server/levelpace_server.py --db levelpace.db --import inbox\n' > "$LB/inbox/PUT-FILES-HERE.txt"
 chmod +x "$LB"/*.command 2>/dev/null || true

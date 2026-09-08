@@ -281,12 +281,13 @@ function Write-Board([string]$addonDir, $overall, $twinks, [string]$source, $ver
         foreach ($n in @($e.nemesis) | Select-Object -First 3) {
             if ($n) { $nem += ('{ name=' + (LuaStr $n.name) + ', count=' + (LuaNum $n.count) + ' }') }
         }
-        $lines.Add(('    { rank=%RANK%, name=%NAME%, realm=%REALM%, class=%CLASS%, bracket=%BR%, ilvl=%ILVL%, weekly=%WK%, lifetime=%LT%, deaths=%D%, kd=%KD%, nemesis={%NEM%} },' `
+        $lines.Add(('    { rank=%RANK%, name=%NAME%, realm=%REALM%, class=%CLASS%, bracket=%BR%, ilvl=%ILVL%, weekly=%WK%, lifetime=%LT%, deaths=%D%, kills=%K%, bestStreak=%BS%, kd=%KD%, nemesis={%NEM%} },' `
             -replace '%RANK%', (LuaNum $e.rank) -replace '%NAME%', (LuaStr $e.display) `
             -replace '%REALM%', (LuaStr $e.realm) -replace '%CLASS%', (LuaStr $e.class) `
             -replace '%BR%', (LuaNum $e.bracket) -replace '%ILVL%', (LuaNum $e.item_level) `
             -replace '%WK%', (LuaNum $e.weekly_kills) -replace '%LT%', (LuaNum $e.lifetime_kills) `
-            -replace '%D%', (LuaNum $e.deaths) -replace '%KD%', (LuaNum $e.kd) `
+            -replace '%D%', (LuaNum $e.deaths) -replace '%K%', (LuaNum $e.kills) `
+            -replace '%BS%', (LuaNum $e.best_streak) -replace '%KD%', (LuaNum $e.kd) `
             -replace '%NEM%', ($nem -join ',')))
     }
     $lines.Add('  },')

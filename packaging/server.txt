@@ -1,27 +1,18 @@
 # LevelPace uploader configuration.
 #
-# Line 1 (required)  where to SEND stats
-# Line 2 (optional)  submission token, if the board requires one
-# Line 3 (optional)  where to READ the rankings from
+# Non-comment lines, in order:
+#   1  where to SEND your stats
+#   2  submission token, if the board uses one   (optional)
+#   3  where to READ the rankings from
 #
-# Only the person handing this folder out edits it. Recipients never do.
+# Only whoever hands this folder out edits it. You do not need to touch it.
 #
-# ---------------------------------------------------------------------------
-# READING is already solved with no domain and no server: GitHub Pages serves
-# the board publicly. That is what fills in /lp board in game. Leave line 3 as
-# it is unless you move the site.
-#
-# SENDING is the part that needs somewhere to reach. Pick one:
-#
-#   Tailscale (no domain, free)   http://100.x.y.z:8080
-#   Cloudflare Tunnel (a domain)  https://levelpace.example.com
-#   Same network only             http://192.168.1.20:8080
-#   Nothing yet                   leave the default; uploads will simply fail
-#                                 and the board still reads fine
-# ---------------------------------------------------------------------------
+# The send address below is on a Tailscale network. If you have not been
+# invited to it, uploads will simply fail and say so -- everything else in
+# the addon still works, and the board below still loads.
 
-http://localhost:8080
+http://100.89.199.101:8080
 
-# token goes here on its own line if you set one on the server
-
+# Reading needs no server at all: GitHub Pages serves the board publicly, so
+# /lp board works even when nothing is running anywhere.
 https://monscorps.github.io/levelpace/api/baseline.json
