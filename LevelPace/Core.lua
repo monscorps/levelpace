@@ -455,6 +455,8 @@ local function dispatch(input)
     LP:Fire("TOGGLE_SHOWN", true)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
+  elseif cmd == "dash" or cmd == "stats" then
+    if LP.Dash then LP.Dash:Toggle() else LP:Print("dashboard not loaded") end
   elseif cmd == "rares" or cmd == "rare" then
     if LP.RareFinder then LP.RareFinder:PrintSummary()
     else LP:Print("rare finder not loaded") end
@@ -482,8 +484,8 @@ local function dispatch(input)
       LP:Print(id .. " is now " .. (now and "on" or "off"))
     end
   else
-    LP:Print("commands: board, rares, nemesis, modules, toggle <id>, reset,")
-    LP:Print("          quests, share, lock, unlock, show, hide, debug")
+    LP:Print("commands: dash, board, rares, nemesis, modules, toggle <id>,")
+    LP:Print("          reset, quests, share, lock, unlock, show, hide, debug")
   end
   LP.lastCommand = cmd
 end

@@ -204,11 +204,54 @@ end
 -- Module
 -- ---------------------------------------------------------------------------
 
+function RF:Dashboard()
+  local st = self:Stats()
+  if st.total == 0 then
+    return { { kind = "empty",
+      text = "No rare kills yet. Kills by others nearby count too." } }
+  end
+
+  local rows = {
+    { kind = "header", text = "Rare kills" },
+    { kind = "stat", label = "Total",  value = st.total },
+    { kind = "stat", label = "Yours",  value = st.mine,
+      note = "the rest you witnessed" },
+    { kind = "stat", label = "Unique", value = st.unique .. " of " ..
+      ((LP.data and LP.data.RARE_COUNT) or "?") },
+  }
+
+  local top = self:TopRares(5)
+  if #top > 0 then
+    local items = {}
+    for i = 1, #top do
+      items[i] = { text = top[i].name or ("#" .. top[i].npc),
+                   sub = "x" .. top[i].n }
+    end
+    rows[#rows + 1] = { kind = "list", title = "Most killed", items = items }
+  end
+
+  local kills = self:Kills()
+  local recent = {}
+  for i = #kills, math.max(1, #kills - 4), -1 do
+    local k = kills[i]
+    recent[#recent + 1] = {
+      text = k.name or ("#" .. k.npc),
+      sub = (date and date("%d %b %H:%M", k.t) or "") ..
+            (k.mine and "" or "  (witnessed)"),
+    }
+  end
+  if #recent > 0 then
+    rows[#rows + 1] = { kind = "list", title = "Recent", items = recent }
+  end
+  return rows
+end
+
 LP:RegisterModule({
   id = "rarefinder",
   title = "Rare Finder",
   desc = "Logs rare kills -- yours and any you witness.",
   default = true,
+  Dashboard = function() return RF:Dashboard() end,
 
   OnEnable = function()
     RF:Init()

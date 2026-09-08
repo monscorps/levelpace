@@ -380,11 +380,50 @@ end
 
 local POLL_SECONDS = 3
 
+function N:Dashboard()
+  local s = self:Lifetime()
+  local rows = {
+    { kind = "header", text = "Battlegrounds" },
+    { kind = "stat", label = "Honorable kills", value = s.honorableKills,
+      note = "lifetime" },
+    { kind = "stat", label = "Record", value = s.wins .. "W  " .. s.losses .. "L",
+      -- Never let this read as a career record: we only saw matches since
+      -- the addon was installed.
+      note = "since install" },
+    { kind = "stat", label = "Killstreak",
+      value = self:CurrentStreak() .. "  (best " .. self:LongestStreak() .. ")" },
+  }
+
+  local top = self:TopNemeses(3)
+  if #top > 0 then
+    local items = {}
+    for i = 1, #top do
+      local t = top[i]
+      items[i] = {
+        text = t.name .. (t.guild and (" <" .. t.guild .. ">") or ""),
+        sub = (t.deaths or 0) .. "d / " .. (t.kills or 0) .. "k",
+      }
+    end
+    rows[#rows + 1] = { kind = "list", title = "Top nemeses", items = items }
+  else
+    rows[#rows + 1] = { kind = "empty",
+      text = "No nemeses yet -- nobody is ahead of you." }
+  end
+
+  local known, total = self:GuildCoverage()
+  if total > 0 then
+    rows[#rows + 1] = { kind = "stat", label = "Enemy guilds known",
+      value = known .. " of " .. total, note = "only those you target" }
+  end
+  return rows
+end
+
 LP:RegisterModule({
   id = "nemesis",
   title = "Nemesis",
   desc = "Battleground roster, nemesis alerts, flags, kills and streaks.",
   default = true,
+  Dashboard = function() return N:Dashboard() end,
 
   OnEnable = function()
     N:Init()
