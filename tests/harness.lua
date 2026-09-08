@@ -122,7 +122,11 @@ local function installGlobals()
   _G.COMBATLOG_XPGAIN_EXHAUSTION5_RAID          = "%s dies, you gain %d experience. (%s exp %s penalty, -%d raid penalty)"
 
   _G.UnitIsGhost = function() return harness.state.isGhost end
-  _G.UnitName = _G.UnitName or function() return harness.state.playerName or "Tester" end
+  _G.UnitName = function(unit)
+    local named = (harness.state.unitNames or {})[unit]
+    if named then return named end
+    return harness.state.playerName or "Tester"
+  end
   _G.GetNumPartyMembers = function() return harness.state.partyMembers or 0 end
   _G.GetNumRaidMembers = function() return harness.state.raidMembers or 0 end
 
@@ -142,7 +146,6 @@ local function installGlobals()
   _G.UnitXP           = function() return harness.state.xp or 0 end
   _G.UnitXPMax        = function() return harness.state.xpMax or 1000 end
   _G.UnitLevel        = function() return harness.state.level or 1 end
-  _G.UnitName         = function() return harness.state.playerName or "Tester" end
   _G.GetXPExhaustion  = function() return harness.state.rested end
   _G.IsXPUserDisabled = function() return harness.state.xpDisabled end
   _G.GetRealmName     = function() return harness.state.realm or "TestRealm" end
@@ -178,6 +181,60 @@ local function installGlobals()
   _G.GetPVPYesterdayStats = function()
     return harness.state.yesterdayHK or 0, 0
   end
+
+  -- ==== Battleground scoreboard ====
+  -- GetBattlefieldScore returns TWELVE values on 3.3.5a, in this order:
+  --   name, killingBlows, honorableKills, deaths, honorGained,
+  --   faction, rank, race, class, classToken, damageDone, healingDone
+  -- Verified against Blizzard's own FrameXML (WorldStateFrame.lua:662).
+  -- Modern wiki pages give a different order; they are documenting a later
+  -- expansion. faction is 0 = Horde, 1 = Alliance.
+  harness.state.bgScores = harness.state.bgScores or {}
+  _G.GetNumBattlefieldScores = function()
+    return #(harness.state.bgScores or {})
+  end
+  _G.GetBattlefieldScore = function(i)
+    local r = (harness.state.bgScores or {})[i]
+    if not r then return nil end
+    return r.name, r.killingBlows or 0, r.honorableKills or 0, r.deaths or 0,
+           r.honorGained or 0, r.faction, r.rank or 0, r.race or "Human",
+           r.class or "Warrior", r.classToken or "WARRIOR",
+           r.damageDone or 0, r.healingDone or 0
+  end
+  _G.RequestBattlefieldScoreData = function()
+    harness.state.scoreRequests = (harness.state.scoreRequests or 0) + 1
+  end
+  _G.GetBattlefieldWinner = function() return harness.state.bgWinner end
+  -- Milliseconds, not seconds (WorldStateFrame.lua:824).
+  _G.GetBattlefieldInstanceRunTime = function()
+    return harness.state.bgRunTimeMS or 0
+  end
+  _G.IsActiveBattlefieldArena = function() return harness.state.isArena end
+  _G.GetBattlefieldFlagPosition = function(i)
+    local f = (harness.state.flags or {})[i]
+    if not f then return nil end
+    return f.x, f.y, f.token
+  end
+  _G.GetNumBattlefieldFlagPositions = function()
+    return #(harness.state.flags or {})
+  end
+
+  -- Three returns on 3.3.5a: name, rankName, rankIndex. Takes a UNIT token --
+  -- there is no way to look a guild up by player name, and no nameplate unit
+  -- tokens exist on this client.
+  _G.GetGuildInfo = function(unit)
+    local g = (harness.state.guilds or {})[unit]
+    if not g then return nil end
+    return g, "Member", 4
+  end
+
+  -- PlaySoundFile returns NOTHING on 3.3.5a: a bad path fails silently, so
+  -- the addon cannot detect one. Record calls so tests can assert intent.
+  _G.PlaySoundFile = function(path)
+    harness.state.sounds = harness.state.sounds or {}
+    table.insert(harness.state.sounds, path)
+  end
+  _G.PlaySound = _G.PlaySoundFile
   _G.UnitGUID = function(unit)
     if unit == "player" then return harness.state.playerGUID or "0xPLAYER" end
     return nil

@@ -30,4 +30,5 @@ UI\Tooltip.lua
 UI\Options.lua
 Modules\LevelPace.lua
 Modules\RareFinder.lua
+Modules\Nemesis.lua
 Init.lua
