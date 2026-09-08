@@ -124,4 +124,36 @@ h.run("SetModuleEnabled on an unknown id returns false", function()
   h.eq(LP:SetModuleEnabled("ghost", true), false, "no such module")
 end)
 
+h.run("levelpace registers itself as a module", function()
+  h.load("LevelPace/Core.lua")
+  h.load("LevelPace/Compat.lua")
+  h.load("LevelPace/Modules/LevelPace.lua")
+  local LP = _G.LevelPace
+  LP:InitDB()
+  local m = LP:GetModule("levelpace")
+  h.ok(m, "registered")
+  h.eq(m.title, "LevelPace", "has a title")
+  h.eq(m.default, true, "enabled by default")
+  h.eq(LP:ModuleEnabled("levelpace"), true, "reads as enabled")
+end)
+
+h.run("disabling levelpace hides its frames", function()
+  h.load("LevelPace/Core.lua")
+  h.load("LevelPace/Compat.lua")
+  h.load("LevelPace/Modules/LevelPace.lua")
+  local LP = _G.LevelPace
+  LP:InitDB()
+  local shown = { bar = true, box = true }
+  LP.Bar = { frame = { Hide = function() shown.bar = false end,
+                       Show = function() shown.bar = true end } }
+  LP.Box = { frame = { Hide = function() shown.box = false end,
+                       Show = function() shown.box = true end } }
+  LP:SetModuleEnabled("levelpace", true)
+  LP:SetModuleEnabled("levelpace", false)
+  h.eq(shown.bar, false, "bar hidden")
+  h.eq(shown.box, false, "box hidden")
+  LP:SetModuleEnabled("levelpace", true)
+  h.eq(shown.bar, true, "bar shown again")
+end)
+
 os.exit(h.report() and 0 or 1)

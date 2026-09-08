@@ -27,4 +27,5 @@ UI\Gauge.lua
 UI\Board.lua
 UI\Tooltip.lua
 UI\Options.lua
+Modules\LevelPace.lua
 Init.lua
