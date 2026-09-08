@@ -1,4 +1,0 @@
-Drop a friend LevelPace.lua here (subfolders are fine), then run
-import-inbox.command, or:
-
-  python3 server/levelpace_server.py --db levelpace.db --import inbox

@@ -42,11 +42,27 @@ cleanup() {
 trap cleanup INT TERM
 
 echo
-echo "  starting server on :8080"
-LEVELPACE_TOKEN="$(cat .token)" \
-  python3 server/levelpace_server.py --port 8080 --db "$DB" &
-SRV=$!
-sleep 2
+# Something may already own the port -- most likely the launchd agent, which
+# has KeepAlive set and will simply restart if killed. Reuse it rather than
+# fight it: two servers on one database is worse than one we did not start.
+if lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "  a server is already running on :8080 -- reusing it"
+  echo "  (that is probably the launchd agent; this script does not need to"
+  echo "   start its own. To use only this script instead, run:"
+  echo "     launchctl unload -w ~/Library/LaunchAgents/com.levelpace.server.plist)"
+  SRV=""
+else
+  echo "  starting server on :8080"
+  LEVELPACE_TOKEN="$(cat .token)" \
+    python3 server/levelpace_server.py --port 8080 --db "$DB" &
+  SRV=$!
+  sleep 2
+  if ! kill -0 "$SRV" 2>/dev/null; then
+    echo "  ! the server exited immediately. Check the error above."
+    read -r -p "Press return to close." _
+    exit 1
+  fi
+fi
 
 echo "  opening a free tunnel (no domain needed)"
 rm -f "$LOG"
