@@ -101,6 +101,11 @@ function Bar:ApplyStyle()
 end
 
 function Bar:Update()
+  -- Owned by the levelpace module; do not draw while it is off.
+  if LP.ModuleOff and LP:ModuleOff("levelpace") then
+    if self.holder then self.holder:Hide() end
+    return
+  end
   if not self.frame or not UnitXP then return end
 
   -- Visibility is decided FIRST. It used to sit after the max-level early

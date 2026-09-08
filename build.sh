@@ -66,6 +66,14 @@ done
 # PowerShell that follows. `exit /b` means cmd never parses past the marker,
 # so one file is both a launcher and its own payload -- no extraction, no
 # temp file, nothing to install.
+#
+# The marker is searched for as '#PS'+'START' rather than the literal, and that
+# is load-bearing, not style. Written literally, the launcher line CONTAINS the
+# marker, so IndexOf finds its own occurrence: PowerShell then receives the
+# rest of the launcher line (harmless, it starts with #) followed by `exit /b`
+# -- and `exit` is a PowerShell keyword. The session quits on line two, the
+# tray icon never appears, and the window just flashes and closes. Splitting
+# the literal means the only real '#PSSTART' in the file is the marker.
 COMPANION="$LB/LevelPace Companion.bat"
 {
   printf '@echo off\r\n'
@@ -78,12 +86,27 @@ COMPANION="$LB/LevelPace Companion.bat"
   printf 'REM\r\n'
   printf 'REM  Nothing is installed. It uses the PowerShell already in Windows.\r\n'
   printf 'REM ==========================================================================\r\n'
-  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -Command "$s=[IO.File]::ReadAllText(\x27%%~f0\x27);iex ($s.Substring($s.IndexOf(\x27#PSSTART\x27)))"\r\n'
+  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -Command "try{$s=[IO.File]::ReadAllText(\x27%%~f0\x27);iex ($s.Substring($s.IndexOf(\x27#PS\x27+\x27START\x27)))}catch{[IO.File]::WriteAllText($env:TEMP+\x27\\LevelPace-startup-error.txt\x27,$_.Exception.ToString())}"\r\n'
   printf 'exit /b\r\n'
   printf '#PSSTART\r\n'
   perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1
 } > "$COMPANION"
 echo "  built companion: $(basename "$COMPANION")"
+
+# Verify the weld. This shipped broken once and nothing about it was visible
+# from a Mac, so it is a build gate rather than something to remember.
+PWSH="$(command -v pwsh || echo "$HOME/.local/pwsh/pwsh")"
+if [ -x "$PWSH" ]; then
+  if ! "$PWSH" -NoProfile -File tools/verify-companion.ps1 "$COMPANION"; then
+    echo "  ! the companion launcher is broken -- refusing to build a zip" >&2
+    exit 1
+  fi
+else
+  echo "  ! pwsh not found: the companion is NOT verified." >&2
+  echo "    Install it (no sudo needed) with:" >&2
+  echo "      curl -fsSL -o /tmp/p.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/powershell-7.4.6-osx-arm64.tar.gz" >&2
+  echo "      mkdir -p ~/.local/pwsh && tar zxf /tmp/p.tar.gz -C ~/.local/pwsh && chmod +x ~/.local/pwsh/pwsh" >&2
+fi
 
 ( cd "$OUT" && zip -qr LevelPace-Leaderboard.zip LevelPace-Leaderboard )
 echo "built $OUT/LevelPace-Leaderboard.zip"

@@ -74,6 +74,11 @@ function Gauge:ApplyStyle()
 end
 
 function Gauge:Update()
+  -- Owned by the levelpace module; do not draw while it is off.
+  if LP.ModuleOff and LP:ModuleOff("levelpace") then
+    if self.holder then self.holder:Hide() end
+    return
+  end
   if not self.holder then return end
   if not LP.db.profile.gauge.shown then self.holder:Hide(); return end
   self.holder:Show()

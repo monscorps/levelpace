@@ -221,6 +221,17 @@ function LP:SetModuleEnabled(id, on)
   return true
 end
 
+-- A frame owned by a module must not draw while that module is switched off.
+--
+-- This is not belt-and-braces. The internal bus has NO unsubscribe path, so
+-- TICK and XP_EVENT keep reaching every UI Update function after OnDisable has
+-- run. Without this check the frame is hidden by OnDisable and shown again a
+-- second later by the next tick -- which is exactly what "it flashed and the
+-- boxes were still there" looks like.
+function LP:ModuleOff(id)
+  return not LP:ModuleEnabled(id)
+end
+
 function LP:StartModules()
   local order = LP:ModuleOrder()
   for i = 1, #order do

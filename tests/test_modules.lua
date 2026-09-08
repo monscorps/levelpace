@@ -143,17 +143,66 @@ h.run("disabling levelpace hides its frames", function()
   h.load("LevelPace/Modules/LevelPace.lua")
   local LP = _G.LevelPace
   LP:InitDB()
-  local shown = { bar = true, box = true }
-  LP.Bar = { frame = { Hide = function() shown.bar = false end,
-                       Show = function() shown.bar = true end } }
-  LP.Box = { frame = { Hide = function() shown.box = false end,
-                       Show = function() shown.box = true end } }
+  local shown = { bar = true, box = true, gauge = true }
+  -- Field names match the real modules: Bar and Gauge use `holder`, Box uses
+  -- `frame`. The previous version of this test mocked `LP.Bar.frame`, which
+  -- does not exist, so it passed while the real bar was never hidden.
+  LP.Bar   = { holder = { Hide = function() shown.bar = false end,
+                          Show = function() shown.bar = true end } }
+  LP.Box   = { frame  = { Hide = function() shown.box = false end,
+                          Show = function() shown.box = true end } }
+  LP.Gauge = { holder = { Hide = function() shown.gauge = false end,
+                          Show = function() shown.gauge = true end } }
   LP:SetModuleEnabled("levelpace", true)
   LP:SetModuleEnabled("levelpace", false)
   h.eq(shown.bar, false, "bar hidden")
   h.eq(shown.box, false, "box hidden")
+  h.eq(shown.gauge, false, "gauge hidden")
   LP:SetModuleEnabled("levelpace", true)
   h.eq(shown.bar, true, "bar shown again")
+end)
+
+-- ==== the toggle must actually stick ====
+--
+-- Reported from the game: turning LevelPace off made the frames "flash and
+-- the boxes was still there". OnDisable hid them, and the very next TICK --
+-- still reaching UI Update through the bus, which has no unsubscribe -- put
+-- them straight back.
+
+h.run("a disabled module's frames stay hidden across ticks", function()
+  for line in io.lines("LevelPace/LevelPace.toc") do
+    line = string.gsub(line, "%s+$", "")
+    if string.match(line, "%.lua$") and not string.match(line, "^#") then
+      h.load("LevelPace/" .. (string.gsub(line, "\\", "/")))
+    end
+  end
+  local LP = _G.LevelPace
+  LP:InitDB()
+  LP:Fire("PLAYER_READY")
+  LP:StartModules()
+
+  local bar = LP.Bar and LP.Bar.holder
+  local box = LP.Box and LP.Box.frame
+  h.ok(bar, "bar frame exists")
+  h.ok(box, "box frame exists")
+
+  LP.db.profile.bar.shown = true
+  LP.db.profile.box.shown = true
+  LP:SetModuleEnabled("levelpace", false)
+  h.eq(bar:IsShown(), false, "bar hidden on disable")
+  h.eq(box:IsShown(), false, "box hidden on disable")
+
+  -- The tick that used to undo it.
+  LP:Fire("TICK")
+  LP:Fire("XP_EVENT", { total = 100 })
+  h.eq(bar:IsShown(), false, "bar STILL hidden after a tick")
+  h.eq(box:IsShown(), false, "box STILL hidden after a tick")
+
+  -- And re-enabling brings them back on the next draw, without a reload.
+  LP:SetModuleEnabled("levelpace", true)
+  LP:Fire("TICK")
+  h.eq(bar:IsShown(), true, "bar returns when switched back on")
+  h.eq(box:IsShown(), true, "box returns when switched back on")
 end)
 
 os.exit(h.report() and 0 or 1)

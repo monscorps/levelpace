@@ -221,6 +221,11 @@ function Box:Values()
 end
 
 function Box:Update()
+  -- Owned by the levelpace module; do not draw while it is off.
+  if LP.ModuleOff and LP:ModuleOff("levelpace") then
+    if self.frame then self.frame:Hide() end
+    return
+  end
   if not self.frame then return end
   local p = LP.db.profile.box
   if not p.shown then self.frame:Hide(); return end

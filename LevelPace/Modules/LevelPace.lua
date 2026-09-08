@@ -9,9 +9,16 @@
 
 local LP = _G.LevelPace
 
+-- Bar and Gauge keep their root frame in `holder`; Box keeps it in `frame`.
+-- Looking only at `frame` meant OnDisable silently skipped the bar and the
+-- gauge entirely -- they were never hidden at all, which is half of why
+-- turning the module off appeared to do nothing.
 local function each(fn)
   for _, part in ipairs({ LP.Bar, LP.Box, LP.Gauge }) do
-    if part and part.frame then fn(part.frame) end
+    if part then
+      local f = part.holder or part.frame
+      if f then fn(f) end
+    end
   end
 end
 
