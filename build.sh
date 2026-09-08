@@ -61,6 +61,30 @@ for f in "$LB/START-HERE.txt" "$LB/FOR-YOUR-MATES.txt" "$LB/README.md" \
 done
 # NOTE: no cleanup of an old lower-case "LevelPace-leaderboard.zip" here --
 # macOS is case-insensitive, so removing it removes the one just built.
+# ---- the one file a player runs ---------------------------------------------
+# A batch file that reads ITSELF, finds the marker, and executes the
+# PowerShell that follows. `exit /b` means cmd never parses past the marker,
+# so one file is both a launcher and its own payload -- no extraction, no
+# temp file, nothing to install.
+COMPANION="$LB/LevelPace Companion.bat"
+{
+  printf '@echo off\r\n'
+  printf 'REM ==========================================================================\r\n'
+  printf 'REM  LevelPace Companion -- double-click this. That is the whole instruction.\r\n'
+  printf 'REM\r\n'
+  printf 'REM  It puts an icon in your notification area (bottom-right, maybe under the\r\n'
+  printf 'REM  ^ arrow) and uploads your stats by itself whenever you log out of WoW.\r\n'
+  printf 'REM  Right-click the icon to upload now, open the board, or quit.\r\n'
+  printf 'REM\r\n'
+  printf 'REM  Nothing is installed. It uses the PowerShell already in Windows.\r\n'
+  printf 'REM ==========================================================================\r\n'
+  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$s=[IO.File]::ReadAllText(\x27%%~f0\x27);iex ($s.Substring($s.IndexOf(\x27#PSSTART\x27)))"\r\n'
+  printf 'exit /b\r\n'
+  printf '#PSSTART\r\n'
+  perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1
+} > "$COMPANION"
+echo "  built companion: $(basename "$COMPANION")"
+
 ( cd "$OUT" && zip -qr LevelPace-Leaderboard.zip LevelPace-Leaderboard )
 echo "built $OUT/LevelPace-Leaderboard.zip"
 unzip -l "$OUT/LevelPace-Leaderboard.zip" | tail -16

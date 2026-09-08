@@ -2,16 +2,11 @@
 
 ---
 
-## Download
+## Two things to do
 
-| | |
-|---|---|
-| **`LevelPace.zip`** | **The addon.** This is the one you want. |
-| `LevelPace-Leaderboard.zip` | Server + uploader. Only if you're joining or hosting a board. **Not an addon** — don't put it in AddOns. |
+### 1. The addon
 
-## Install
-
-Unzip `LevelPace.zip` into your WoW folder so you end up with:
+Download **`LevelPace.zip`** and unzip it into your WoW folder so you end up with:
 
 ```
 ...\Interface\AddOns\LevelPace\LevelPace.toc
@@ -19,15 +14,35 @@ Unzip `LevelPace.zip` into your WoW folder so you end up with:
 
 If you see `AddOns\LevelPace\LevelPace\LevelPace.toc`, you went one folder too deep — move it up one.
 
-Start WoW, tick **LevelPace** in the AddOns list at the character screen (and **Load out of date AddOns** if it's greyed), then type `/lp` in game.
+Start WoW, tick **LevelPace** in the AddOns list at the character screen (and **Load out of date AddOns** if it's greyed out), then type `/lp` in game.
 
-**That's it.** Everything below works offline, on your own, with nothing else installed.
+**That's the addon done.** Everything below works on its own from here — XP tracking, quest rankings, kill streaks, achievements. You never need anything else.
+
+### 2. The companion — only if you want to be on the leaderboard
+
+Download **`LevelPace-Leaderboard.zip`**, unzip it anywhere, and double-click:
+
+```
+LevelPace Companion.bat
+```
+
+That's the whole instruction. Nothing installs. No account, no sign-up.
+
+An icon appears by your clock (possibly hidden under the `^` arrow). Leave it running — it uploads your stats by itself whenever you log out of WoW, and brings everyone else's rankings back into your addon.
+
+Right-click the icon for **Upload now**, **Open the web board**, **View log**, or **Quit**.
+
+To start it with Windows: `Win+R` → `shell:startup` → drop a shortcut to the .bat in there.
+
+One thing to turn on first, once: `/lp` → **Leaderboard** → tick **Share my levelling stats**. Nothing leaves your machine until you do.
 
 ---
 
-## What's new
+## What's new in this release
 
-**Kill streaks — and these are exact.** `PARTY_KILL` fires for the killer with the victim's real name, so your kills and streaks are measured, not guessed. (It never reaches the victim, which is exactly why nemesis has to guess.) Current streak resets on death; best streak persists.
+**The companion is now a proper tray app, not a script you re-run.** One file, an icon by the clock, and it uploads by itself. Previously you had to remember to run it after every session.
+
+**Kill streaks — and these are exact.** The game tells your client when you kill someone, with their name, so kills and streaks are measured rather than guessed. Current streak resets on death; best streak persists.
 
 **Fourteen achievements**, announced once in chat when earned. The good ones lean on the nemesis data:
 
@@ -37,9 +52,7 @@ Start WoW, tick **LevelPace** in the AddOns list at the character screen (and **
 - **Arch-Rival** — 10 kills each way with the same player
 - **Humbled** — die to the same player 10 times, because that deserves recognition too
 
-**A "My PvP" tab** on `/lp board` — your kills, streaks, item level, top 3 nemeses and recent achievements. It reads your saved data directly, so it works for someone who shares nothing.
-
-**A `READ-ME-FIRST.txt`** inside the zip, written for someone who's never installed an addon.
+**A "My PvP" tab** on `/lp board` — your kills, streaks, item level, top 3 nemeses and recent achievements. Reads your saved data directly, so it works for someone who shares nothing.
 
 ---
 
@@ -51,25 +64,23 @@ Start WoW, tick **LevelPace** in the AddOns list at the character screen (and **
 | `/lp board` | Rankings and your PvP record |
 | `/lp quests` | Which of your quests are worth doing right now |
 | `/lp reset` | Start this level's tracking over |
+| `/lp debug` | Last 20 XP events, if something looks wrong |
 
 ---
 
-## Joining the leaderboard
+## Why it only updates when you log out
 
-Optional, and off by default.
+WoW writes its saved data to disk on logout or `/reload` — **never while you're playing**. No addon can change that; there's no API for it.
 
-1. `/lp` → **Leaderboard** → tick **Share my levelling stats**
-   (and **Also share PvP stats** for the twink board — separate on purpose, since it includes the names of players who killed you)
-2. **Log out, or `/reload`.** WoW only writes its saved data then — never while you're playing, so there's nothing to send until you do.
-3. Unzip `LevelPace-Leaderboard.zip` anywhere and double-click **`run-uploader.bat`**
+So the companion watches that file and uploads within a second or two of the game writing it. In practice: play, log out, and it's sent before you've finished looking at the character screen. The addon itself tracks everything live in game — this is only about getting it out.
 
-Nothing to install — it uses the PowerShell that already ships with Windows. `run-uploader-dryrun.bat` shows exactly what would be sent without sending it, and `run-uploader-auto.bat` does it for you whenever you finish playing.
+To see new rankings in game, `/reload` after the companion has run. The board tells you how old it is, so you always know what you're looking at.
 
 ---
 
 ## Which numbers are exact, and which aren't
 
-Not everything WoW 3.3.5a shows you is actually available to an addon. Where something had to be reconstructed, it's labelled rather than dressed up:
+Not everything WoW 3.3.5a shows you is available to an addon. Where something had to be reconstructed, it's labelled rather than dressed up:
 
 | | |
 |---|---|
