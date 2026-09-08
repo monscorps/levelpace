@@ -51,7 +51,7 @@
 - Consumes: `LP.util.CopyDefaults` (Compat.lua), `LP.db` (Core.lua:148)
 - Produces: `LP:RegisterModule(def) -> def`, `LP:GetModule(id) -> def|nil`, `LP:ModuleOrder() -> {id,...}`, `LP:ModuleEnabled(id) -> boolean`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_modules.lua`:
 
@@ -126,12 +126,12 @@ end)
 os.exit(h.report() and 0 or 1)
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `luajit tests/test_modules.lua`
 Expected: FAIL — `attempt to call method 'RegisterModule' (a nil value)`
 
-- [ ] **Step 3: Add `modules` to the saved defaults**
+- [x] **Step 3: Add `modules` to the saved defaults**
 
 In `LevelPace/Core.lua`, inside `LP.defaults.profile` (the table that ends at `Core.lua:146` with `countRestedInProjection = true`), add one line:
 
@@ -142,7 +142,7 @@ In `LevelPace/Core.lua`, inside `LP.defaults.profile` (the table that ends at `C
     modules = {},
 ```
 
-- [ ] **Step 4: Implement the registry**
+- [x] **Step 4: Implement the registry**
 
 In `LevelPace/Core.lua`, replace line 16 (`LP.modules = {}`) with the same line, and add this block immediately after the event bus section (after `LP:Print`, before the Scheduler comment at line ~50):
 
@@ -188,17 +188,17 @@ function LP:ModuleEnabled(id)
 end
 ```
 
-- [ ] **Step 5: Run the test to confirm it passes**
+- [x] **Step 5: Run the test to confirm it passes**
 
 Run: `luajit tests/test_modules.lua`
 Expected: PASS, 16 assertions
 
-- [ ] **Step 6: Confirm nothing else broke**
+- [x] **Step 6: Confirm nothing else broke**
 
 Run: `./tests/run.sh`
 Expected: `ALL GREEN`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add LevelPace/Core.lua tests/test_modules.lua
@@ -221,7 +221,7 @@ is undefined and would reshuffle dashboard tabs between sessions."
 - Consumes: `LP:ModuleEnabled`, `LP:ModuleOrder`, `LP:Fire` (Core.lua:30)
 - Produces: `LP:SetModuleEnabled(id, on) -> boolean`, `LP:StartModules()`, and the events `MODULE_ENABLED` / `MODULE_DISABLED`, each carrying the module id
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_modules.lua`, before `os.exit(h.report() and 0 or 1)`:
 
@@ -286,12 +286,12 @@ h.run("SetModuleEnabled on an unknown id returns false", function()
 end)
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `luajit tests/test_modules.lua`
 Expected: FAIL — `attempt to call method 'SetModuleEnabled' (a nil value)`
 
-- [ ] **Step 3: Implement the lifecycle**
+- [x] **Step 3: Implement the lifecycle**
 
 Append to the module registry block in `LevelPace/Core.lua`:
 
@@ -348,12 +348,12 @@ end
 function LP:UnregisterModuleEvents(_) end
 ```
 
-- [ ] **Step 4: Run the test to confirm it passes**
+- [x] **Step 4: Run the test to confirm it passes**
 
 Run: `luajit tests/test_modules.lua`
 Expected: PASS
 
-- [ ] **Step 5: Call StartModules from Bootstrap**
+- [x] **Step 5: Call StartModules from Bootstrap**
 
 In `LevelPace/Core.lua`, inside `LP:Bootstrap`'s `PLAYER_LOGIN` branch (`Core.lua:180-186`), add `LP:StartModules()` **after** `LP:Fire("PLAYER_READY")`:
 
@@ -370,12 +370,12 @@ In `LevelPace/Core.lua`, inside `LP:Bootstrap`'s `PLAYER_LOGIN` branch (`Core.lu
 
 Order is deliberate: every existing file hooks `PLAYER_READY` at file scope, so firing it first keeps their wiring identical and guarantees this stage changes no behaviour.
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `./tests/run.sh`
 Expected: `ALL GREEN` — in particular `tests/test_smoke.lua`, which drives the real `ADDON_LOADED` → `PLAYER_LOGIN` path
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add LevelPace/Core.lua tests/test_modules.lua
@@ -399,7 +399,7 @@ untouched and this stage stays behaviour-neutral."
 
 Today every module opens its own hidden frame and registers WoW events directly. Three modules would mean three frames and three `COMBAT_LOG_EVENT_UNFILTERED` handlers — the hottest path in the addon during a 40-player battleground.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_events.lua`:
 
@@ -478,12 +478,12 @@ end)
 os.exit(h.report() and 0 or 1)
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `luajit tests/test_events.lua`
 Expected: FAIL — `attempt to call method 'RegisterEvent' (a nil value)`
 
-- [ ] **Step 3: Implement the router**
+- [x] **Step 3: Implement the router**
 
 In `LevelPace/Core.lua`, delete the `LP:UnregisterModuleEvents` stub from Task 2 and add this section immediately after the module registry block:
 
@@ -543,17 +543,17 @@ function LP:UnregisterModuleEvents(moduleID)
 end
 ```
 
-- [ ] **Step 4: Run both test files**
+- [x] **Step 4: Run both test files**
 
 Run: `luajit tests/test_events.lua && luajit tests/test_modules.lua`
 Expected: PASS for both
 
-- [ ] **Step 5: Run the full suite**
+- [x] **Step 5: Run the full suite**
 
 Run: `./tests/run.sh`
 Expected: `ALL GREEN`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add LevelPace/Core.lua tests/test_events.lua
@@ -576,7 +576,7 @@ garbage collected on 3.3.5a and CLEU is the hottest path in a BG."
 - Consumes: `LP:RegisterEvent` (Task 3)
 - Produces: `LP.util.CreatureID(guid) -> number|nil`, `LP:OnCombatLog(moduleID, subevents, fn)`, `LP:DispatchCombatLog(...)`
 
-- [ ] **Step 1: Write the failing GUID test**
+- [x] **Step 1: Write the failing GUID test**
 
 Append to `tests/test_compat.lua`, before `os.exit(h.report() and 0 or 1)`:
 
@@ -611,12 +611,12 @@ h.run("CreatureID is defensive about junk", function()
 end)
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `luajit tests/test_compat.lua`
 Expected: FAIL — `attempt to call field 'CreatureID' (a nil value)`
 
-- [ ] **Step 3: Implement CreatureID**
+- [x] **Step 3: Implement CreatureID**
 
 Add to `LevelPace/Compat.lua`, alongside the other `util.*` functions:
 
@@ -642,12 +642,12 @@ function util.CreatureID(guid)
 end
 ```
 
-- [ ] **Step 4: Run the GUID test**
+- [x] **Step 4: Run the GUID test**
 
 Run: `luajit tests/test_compat.lua`
 Expected: PASS
 
-- [ ] **Step 5: Write the failing dispatcher test**
+- [x] **Step 5: Write the failing dispatcher test**
 
 Append to `tests/test_events.lua`, before `os.exit(h.report() and 0 or 1)`:
 
@@ -697,12 +697,12 @@ h.run("disabling a module stops its combat log handler", function()
 end)
 ```
 
-- [ ] **Step 6: Run it to confirm it fails**
+- [x] **Step 6: Run it to confirm it fails**
 
 Run: `luajit tests/test_events.lua`
 Expected: FAIL — `attempt to call method 'OnCombatLog' (a nil value)`
 
-- [ ] **Step 7: Implement the dispatcher**
+- [x] **Step 7: Implement the dispatcher**
 
 Append to the event-router section in `LevelPace/Core.lua`:
 
@@ -755,17 +755,17 @@ end
   end
 ```
 
-- [ ] **Step 8: Run the tests**
+- [x] **Step 8: Run the tests**
 
 Run: `luajit tests/test_events.lua && luajit tests/test_compat.lua`
 Expected: PASS for both
 
-- [ ] **Step 9: Run the full suite**
+- [x] **Step 9: Run the full suite**
 
 Run: `./tests/run.sh`
 Expected: `ALL GREEN`
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add LevelPace/Core.lua LevelPace/Compat.lua tests/test_events.lua tests/test_compat.lua
@@ -794,7 +794,7 @@ GUID decode verified against a live capture from the target server:
 
 Nemesis and RareFinder each need a dashboard. Without this, each grows its own copy of the backdrop/font/colour code that `UI/Box.lua` and `UI/Gauge.lua` already duplicate.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_uilib.lua`:
 
@@ -856,12 +856,12 @@ end)
 os.exit(h.report() and 0 or 1)
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `luajit tests/test_uilib.lua`
 Expected: FAIL — `module 'LevelPace/UI/Lib.lua' not found` or `attempt to index field 'UI' (a nil value)`
 
-- [ ] **Step 3: Implement the library**
+- [x] **Step 3: Implement the library**
 
 Create `LevelPace/UI/Lib.lua`:
 
@@ -924,7 +924,7 @@ function UI.Style(frame, style)
 end
 ```
 
-- [ ] **Step 4: Add it to the TOC**
+- [x] **Step 4: Add it to the TOC**
 
 In `LevelPace/LevelPace.toc`, insert `UI\Lib.lua` **before** `UI\Bar.lua` (currently line 23), so the library exists before anything that might use it:
 
@@ -933,17 +933,17 @@ UI\Lib.lua
 UI\Bar.lua
 ```
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `luajit tests/test_uilib.lua`
 Expected: PASS
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `./tests/run.sh`
 Expected: `ALL GREEN`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add LevelPace/UI/Lib.lua LevelPace/LevelPace.toc tests/test_uilib.lua
@@ -969,7 +969,7 @@ behaviour-neutral refactor stops being behaviour-neutral."
 
 The toggle controls the module's **visible surface**. The existing files keep their own `PLAYER_READY` wiring, so this stage stays behaviour-neutral; wholesale relocation of eight files into `OnEnable` is a later stage's work and is not needed to unblock Nemesis or RareFinder.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_modules.lua`, before `os.exit(h.report() and 0 or 1)`:
 
@@ -1007,12 +1007,12 @@ h.run("disabling levelpace hides its frames", function()
 end)
 ```
 
-- [ ] **Step 2: Run it to confirm it fails**
+- [x] **Step 2: Run it to confirm it fails**
 
 Run: `luajit tests/test_modules.lua`
 Expected: FAIL — file not found
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 Create `LevelPace/Modules/LevelPace.lua`:
 
@@ -1050,7 +1050,7 @@ LP:RegisterModule({
 })
 ```
 
-- [ ] **Step 4: Add it to the TOC**
+- [x] **Step 4: Add it to the TOC**
 
 In `LevelPace/LevelPace.toc`, add `Modules\LevelPace.lua` immediately **before** `Init.lua` (currently the last entry, line 29):
 
@@ -1059,17 +1059,17 @@ Modules\LevelPace.lua
 Init.lua
 ```
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `luajit tests/test_modules.lua`
 Expected: PASS
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `./tests/run.sh`
 Expected: `ALL GREEN` — all 12 existing suites plus the 3 new ones
 
-- [ ] **Step 7: Verify the TOC lists every file**
+- [x] **Step 7: Verify the TOC lists every file**
 
 Run:
 
@@ -1081,7 +1081,7 @@ done; echo "toc check done"
 
 Expected: `toc check done` with no `MISSING` lines. A file present but absent from the TOC loads in tests and not in game — the failure mode that once made the whole addon load and do nothing.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add LevelPace/Modules/LevelPace.lua LevelPace/LevelPace.toc tests/test_modules.lua
