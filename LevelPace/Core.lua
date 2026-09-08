@@ -466,6 +466,12 @@ local function dispatch(input)
     LP:Fire("TOGGLE_SHOWN", true)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
+  elseif cmd == "meter" then
+    if LP.Meter then
+      LP.Meter:Toggle()
+      LP:Print("meter " .. (LP.Meter:IsShown() and "on" or "off") ..
+               " -- click its header to change view, drag the corner to resize.")
+    else LP:Print("meter not loaded") end
   elseif cmd == "dash" or cmd == "stats" then
     if LP.Dash then LP.Dash:Toggle() else LP:Print("dashboard not loaded") end
   elseif cmd == "rares" or cmd == "rare" then
@@ -495,8 +501,8 @@ local function dispatch(input)
       LP:Print(id .. " is now " .. (now and "on" or "off"))
     end
   else
-    LP:Print("commands: dash, board, rares, nemesis, modules, toggle <id>,")
-    LP:Print("          reset, quests, share, lock, unlock, show, hide, debug")
+    LP:Print("commands: meter, dash, board, rares, nemesis, modules,")
+    LP:Print("          toggle <id>, reset, quests, share, lock, unlock, debug")
   end
   LP.lastCommand = cmd
 end
