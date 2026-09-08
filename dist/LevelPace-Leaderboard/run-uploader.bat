@@ -1,33 +1,38 @@
 @echo off
-REM Reads LevelPace's saved variables, sends them, and writes Baseline.lua
-REM back into your addon folder.
+REM ============================================================================
+REM  LevelPace uploader
+REM
+REM  Sends your levelling stats to the leaderboard, and brings back everyone
+REM  else's so the in-game parse gauge can score you against them.
+REM
+REM  Needs NOTHING installed. It uses the PowerShell that already ships with
+REM  Windows 10 and 11.
+REM ============================================================================
 setlocal
 cd /d "%~dp0"
 
-where python >nul 2>nul
-if errorlevel 1 (
+if not exist "uploader\LevelPaceUpload.ps1" (
   echo.
-  echo   Python was not found.
+  echo   Cannot find uploader\LevelPaceUpload.ps1
   echo.
-  echo   Install Python 3 from python.org, and on the FIRST installer screen
-  echo   tick "Add python.exe to PATH". Then run this again.
+  echo   Run this from inside the LevelPace-Leaderboard folder, with the
+  echo   folder left intact. Do not move this .bat out on its own.
   echo.
   pause
   exit /b 1
 )
 
-set "SERVER=%LEVELPACE_SERVER%"
-if "%SERVER%"=="" set "SERVER=http://localhost:8080"
+REM -ExecutionPolicy Bypass applies to THIS run only. It does not change any
+REM setting on the machine -- without it Windows refuses to run downloaded
+REM scripts and this would fail with a confusing red error.
+powershell -NoProfile -ExecutionPolicy Bypass -File "uploader\LevelPaceUpload.ps1" %*
+set RC=%ERRORLEVEL%
 
-echo.
-echo   Server: %SERVER%
-echo   (set LEVELPACE_SERVER to point somewhere else)
-echo.
-echo   Nothing is sent unless you enabled sharing in the addon:
-echo     /lp  -^>  Leaderboard  -^>  Share my levelling stats
-echo   ...and then logged out or typed /reload.
-echo.
+if not "%RC%"=="0" (
+  echo.
+  echo   Finished with errors.
+  echo   Try run-uploader-dryrun.bat -- it shows what it finds and sends nothing.
+)
 
-python "uploader\levelpace_upload.py" --server "%SERVER%" %*
 echo.
 pause

@@ -130,32 +130,55 @@ function Box:Relayout()
   for _, row in ipairs(visible) do
     row.label:ClearAllPoints()
     row.value:ClearAllPoints()
-    if p.layout == "full" then
-      row.label:SetPoint("TOPLEFT", f, "TOPLEFT", pad, y)
-      row.value:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, y)
-    else -- stacked: label and value share the line, value right-aligned
-      row.label:SetPoint("TOPLEFT", f, "TOPLEFT", pad, y)
-      row.value:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, y)
-    end
+    row.label:SetPoint("TOPLEFT", f, "TOPLEFT", pad, y)
+    row.value:SetPoint("TOPRIGHT", f, "TOPRIGHT", -pad, y)
     row.label:Show(); row.value:Show()
     y = y - lineH - gap
   end
 
-  f:SetWidth(p.layout == "full" and 260 or 220)
-  f:SetHeight(math.max(lineH + pad * 2, -y + pad))
+  self:AutoSize(visible, pad, gap, lineH)
+end
+
+-- Size the frame to the widest label+value pair actually present.
+--
+-- The previous fixed 220/260 width was a guess, and any value wider than the
+-- guess left overlapped the label: they sit on the same line, anchored to
+-- opposite edges, so they collide in the middle with nothing to stop them.
+local GAP_BETWEEN = 14
+local MIN_WIDTH, MAX_WIDTH = 140, 420
+
+function Box:AutoSize(visible, pad, gap, lineH)
+  local f = self.frame
+  local widest = 0
+  for _, row in ipairs(visible or self.rows) do
+    local lw = row.label.GetStringWidth and row.label:GetStringWidth() or 0
+    local vw = row.value.GetStringWidth and row.value:GetStringWidth() or 0
+    local need = lw + vw + GAP_BETWEEN
+    if need > widest then widest = need end
+  end
+  local w = math.max(MIN_WIDTH, math.min(MAX_WIDTH, widest + pad * 2))
+  f:SetWidth(w)
+
+  local n = visible and #visible or #self.rows
+  f:SetHeight(math.max(lineH + pad * 2, n * (lineH + gap) - gap + pad * 2))
 end
 
 -- ---------------------------------------------------------------------------
 -- Content
 -- ---------------------------------------------------------------------------
 
+-- Quest titles are long and arbitrary; left whole they run straight into the
+-- label beside them. Truncated here, and the full text stays in the tooltip.
+local QUEST_TITLE_MAX = 18
+
 local function questLine()
   if not LP.Quests then return "--" end
   local best = LP.Quests:Best()
   if not best then return "none" end
-  if best.complete then return best.title .. " (turn in)" end
-  if not best.xpPerMin then return best.title .. " (?)" end
-  return string.format("%s  %s/min", best.title, util.FormatNumber(best.xpPerMin))
+  local title = util.Truncate(best.title or "?", QUEST_TITLE_MAX)
+  if best.complete then return title .. " (turn in)" end
+  if not best.xpPerMin then return title .. " (?)" end
+  return string.format("%s %s/m", title, util.FormatNumber(best.xpPerMin))
 end
 
 function Box:Values()
@@ -211,12 +234,22 @@ function Box:Update()
     if first then
       first.label:SetText(string.format("%s  |cffaaaaaa/|r  %s/hr  |cffaaaaaa/|r  %s",
         v.level, v.xpPerHour, v.timeToLevel))
+      -- One line, so the width is simply that line plus padding.
+      local w = (first.label.GetStringWidth and first.label:GetStringWidth() or 0) + 16
+      self.frame:SetWidth(math.max(140, math.min(520, w)))
     end
   else
     for _, row in ipairs(self.rows) do
       row.label:SetText(row.spec.label)
       row.value:SetText(v[row.spec.key] or "--")
     end
+    -- Re-fit after the text changed: values grow (nothing -> "1h 24m" ->
+    -- "Kill 10 Ravenous... 3,150/m") and the frame has to grow with them.
+    local vis = {}
+    for _, row in ipairs(self.rows) do
+      if p.lines[row.spec.key] then vis[#vis + 1] = row end
+    end
+    self:AutoSize(vis, 8, p.spacing, p.fontSize + 4)
     -- Colour the time-to-level by how much we trust it.
     for _, row in ipairs(self.rows) do
       if row.spec.key == "timeToLevel" then

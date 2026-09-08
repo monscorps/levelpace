@@ -117,6 +117,14 @@ function util.PushBounded(list, value, maxN)
   return list
 end
 
+-- Cut a string to a maximum length with an ellipsis. Used so a long quest
+-- name cannot run into the label beside it.
+function util.Truncate(str, maxLen)
+  if type(str) ~= "string" then return str end
+  if #str <= maxLen then return str end
+  return string.sub(str, 1, math.max(1, maxLen - 1)) .. "..."
+end
+
 -- Strip the sign and any stray characters off a captured amount like "+86".
 function util.ToNumber(s)
   if type(s) == "number" then return s end

@@ -40,6 +40,13 @@ local function stubFrame(name)
   function f:SetValue(v) self.value = v end
   function f:SetText(t) self.text = t end
   function f:GetText() return self.text end
+  -- Approximate text measurement so layout tests can detect overlap.
+  -- Colour escapes (|cffRRGGBB ... |r) are not drawn, so strip them first.
+  function f:GetStringWidth()
+    local t = self.text or ""
+    t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    return #t * 6
+  end
   function f:CreateFontString(n) local fs = stubFrame(n); self.regions[#self.regions + 1] = fs; return fs end
   function f:CreateTexture(n) local t = stubFrame(n); self.regions[#self.regions + 1] = t; return t end
   function f:GetStatusBarTexture() return self.barTexture end

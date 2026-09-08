@@ -88,6 +88,7 @@ function Export:Write()
     -- Opting out removes what was already written, rather than merely
     -- stopping new writes -- otherwise a stale blob keeps being uploaded.
     LP.gdb.export[key] = nil
+    self:WriteJSON()
     return nil
   end
 
@@ -109,11 +110,82 @@ function Export:Write()
     levels = levelRows(),
   }
   LP.gdb.export[key] = blob
+  self:WriteJSON()
   return blob
 end
 
+-- ---------------------------------------------------------------------------
+-- JSON transport
+--
+-- The export is ALSO written as a single JSON string, because that is what
+-- makes a zero-install uploader possible. Reading the Lua table needs a Lua
+-- parser; reading this needs one regex. A PowerShell script -- already on
+-- every Windows machine -- can ship a player's data with nothing to install.
+-- ---------------------------------------------------------------------------
+
+local ESCAPES = {
+  ['"'] = '\\"', ["\\"] = "\\\\", ["\b"] = "\\b", ["\f"] = "\\f",
+  ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t",
+}
+
+local function jsonString(str)
+  str = string.gsub(str, '[%c"\\]', function(c)
+    return ESCAPES[c] or string.format("\\u%04x", string.byte(c))
+  end)
+  return '"' .. str .. '"'
+end
+
+local function jsonValue(v)
+  local t = type(v)
+  if v == nil then return "null" end
+  if t == "boolean" then return v and "true" or "false" end
+  if t == "number" then
+    -- No inf/nan in JSON, and Lua would emit them happily.
+    if v ~= v or v == math.huge or v == -math.huge then return "null" end
+    if v == math.floor(v) then return string.format("%d", v) end
+    return string.format("%.4f", v)
+  end
+  if t == "string" then return jsonString(v) end
+  if t ~= "table" then return "null" end
+
+  -- Array if it has a [1]; our payload never mixes the two.
+  if v[1] ~= nil then
+    local out = {}
+    for i = 1, #v do out[#out + 1] = jsonValue(v[i]) end
+    return "[" .. table.concat(out, ",") .. "]"
+  end
+  local keys = {}
+  for k in pairs(v) do
+    if type(k) == "string" then keys[#keys + 1] = k end
+  end
+  table.sort(keys)  -- stable output, so an unchanged export is byte-identical
+  local out = {}
+  for _, k in ipairs(keys) do
+    out[#out + 1] = jsonString(k) .. ":" .. jsonValue(v[k])
+  end
+  return "{" .. table.concat(out, ",") .. "}"
+end
+
+Export.ToJSON = jsonValue
+
+-- Rebuild the JSON transport string from every character on this account.
+function Export:WriteJSON()
+  if not LP.gdb then return nil end
+  local list = {}
+  for _, blob in pairs(LP.gdb.export or {}) do list[#list + 1] = blob end
+  if #list == 0 then
+    LP.gdb.exportJSON = nil
+    return nil
+  end
+  LP.gdb.exportJSON = jsonValue(list)
+  return LP.gdb.exportJSON
+end
+
 function Export:Clear()
-  if LP.gdb then LP.gdb.export = nil end
+  if LP.gdb then
+    LP.gdb.export = nil
+    LP.gdb.exportJSON = nil
+  end
 end
 
 function Export:Summary()
