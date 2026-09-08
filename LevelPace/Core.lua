@@ -88,6 +88,53 @@ function LP:ModuleEnabled(id)
   return def.default and true or false
 end
 
+-- Replaced by the real implementation in the event router below.
+function LP:UnregisterModuleEvents(_) end
+
+function LP:SetModuleEnabled(id, on)
+  local def = LP.modules[id]
+  if not def then return false end
+  on = on and true or false
+
+  if LP.db and LP.db.profile then
+    LP.db.profile.modules = LP.db.profile.modules or {}
+    LP.db.profile.modules[id] = LP.db.profile.modules[id] or {}
+    LP.db.profile.modules[id].enabled = on
+  end
+
+  if on == def.enabled then return true end     -- already in the wanted state
+  def.enabled = on
+
+  if on then
+    -- A module that throws while starting must not stop the others, exactly
+    -- as with the event bus.
+    if def.OnEnable then
+      local ok, err = pcall(def.OnEnable, def)
+      if not ok and LP.debug then
+        LP:Print("|cffff5555" .. id .. " OnEnable:|r " .. tostring(err))
+      end
+    end
+    LP:Fire("MODULE_ENABLED", id)
+  else
+    LP:UnregisterModuleEvents(id)
+    if def.OnDisable then
+      local ok, err = pcall(def.OnDisable, def)
+      if not ok and LP.debug then
+        LP:Print("|cffff5555" .. id .. " OnDisable:|r " .. tostring(err))
+      end
+    end
+    LP:Fire("MODULE_DISABLED", id)
+  end
+  return true
+end
+
+function LP:StartModules()
+  local order = LP:ModuleOrder()
+  for i = 1, #order do
+    if LP:ModuleEnabled(order[i]) then LP:SetModuleEnabled(order[i], true) end
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- Scheduler
 --
@@ -224,7 +271,11 @@ function LP:Bootstrap()
     elseif event == "PLAYER_LOGIN" then
       if not LP.db then LP:InitDB() end
       LP:StartDriver()
+      -- PLAYER_READY first: every existing file hooks it at file scope, so
+      -- firing it before StartModules keeps their wiring identical and this
+      -- refactor stays behaviour-neutral.
       LP:Fire("PLAYER_READY")
+      LP:StartModules()
       LP:Print("loaded. /lp for options, /lp board for rankings.")
       LP:CheckVersion()
     end
