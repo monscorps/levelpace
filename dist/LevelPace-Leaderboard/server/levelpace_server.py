@@ -754,6 +754,23 @@ def publish_static(store, out_dir, web_dir, base_url=None):
     dump("stats", stats)
     dump("version", {"addonVersion": version, "downloadUrl": download, "published": now})
 
+    # Where clients should SEND stats. Published rather than baked into the
+    # download, because a free Cloudflare quick tunnel gets a new URL every
+    # restart -- and re-issuing the download to everyone each time is not a
+    # workable plan. Companions look this up and fall back to their bundled
+    # server.txt if it is missing.
+    upload = os.environ.get("LEVELPACE_UPLOAD_URL")
+    dump("config", {
+        "uploadUrl": upload,
+        "published": now,
+        "note": "uploadUrl may change; clients read it here rather than "
+                "relying on the address bundled in their download",
+    })
+    if upload:
+        print("  published upload address: %s" % upload)
+    else:
+        print("  no LEVELPACE_UPLOAD_URL set -- clients will use their bundled address")
+
     baseline = store.baseline()
     dump("baseline", baseline)
     dump("leaderboard", {"entries": store.leaderboard(None, 500)})
