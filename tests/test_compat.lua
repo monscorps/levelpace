@@ -159,4 +159,33 @@ h.run("CopyDefaults fills without clobbering", function()
   h.eq(dst.nested.add, 3, "nested missing filled")
 end)
 
+h.run("CreatureID decodes a real 3.3.5a creature GUID", function()
+  local LP = load()
+  -- Captured live from the target 3.3.5a server: Mangy Wolf, Elwynn Forest.
+  h.eq(LP.util.CreatureID("0xF13000020D02DD76"), 525, "entry 525")
+end)
+
+h.run("CreatureID reads the full 24-bit entry", function()
+  local LP = load()
+  -- Entry 0x010000 = 65536. sub(9,12) would read "0000" and return 0; custom
+  -- NPCs on private servers routinely live above 65535.
+  h.eq(LP.util.CreatureID("0xF130010000000001"), 65536, "24-bit entry")
+  h.eq(LP.util.CreatureID("0xF13001000000000001"), nil, "wrong length is nil")
+end)
+
+h.run("CreatureID rejects non-creatures", function()
+  local LP = load()
+  h.eq(LP.util.CreatureID("0xF140000C6D000001"), nil, "pet (F140)")
+  h.eq(LP.util.CreatureID("0xF150000C6D000001"), nil, "vehicle (F150)")
+  h.eq(LP.util.CreatureID("0x0000000000ABCDEF"), nil, "player")
+end)
+
+h.run("CreatureID is defensive about junk", function()
+  local LP = load()
+  h.eq(LP.util.CreatureID(nil), nil, "nil")
+  h.eq(LP.util.CreatureID(42), nil, "number")
+  h.eq(LP.util.CreatureID(""), nil, "empty string")
+  h.eq(LP.util.CreatureID("0xF130"), nil, "too short")
+end)
+
 os.exit(h.report() and 0 or 1)

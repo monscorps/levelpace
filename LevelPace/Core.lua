@@ -128,7 +128,49 @@ function LP:RegisterEvent(event, moduleID, fn)
   return true
 end
 
+-- Combat log.
+--
+-- The dispatch signature is NORMATIVE and matches 3.3.5a exactly: 8 base
+-- args, no hideCaster (Cataclysm), no raid flags (MoP). Handlers receive
+-- these arguments in this order.
+--
+--   (timestamp, subevent, srcGUID, srcName, srcFlags,
+--    dstGUID, dstName, dstFlags, ...)
+
+local cleuHandlers = {}
+
+function LP:DispatchCombatLog(timestamp, subevent, srcGUID, srcName, srcFlags,
+                              dstGUID, dstName, dstFlags, ...)
+  for i = 1, #cleuHandlers do
+    local hnd = cleuHandlers[i]
+    -- Cheapest possible rejection first: this runs for every combat log line
+    -- in a 40-player battleground.
+    if hnd.subevents[subevent] then
+      local ok, err = pcall(hnd.fn, timestamp, subevent, srcGUID, srcName, srcFlags,
+                            dstGUID, dstName, dstFlags, ...)
+      if not ok and LP.debug then
+        LP:Print("|cffff5555" .. hnd.id .. " / CLEU:|r " .. tostring(err))
+      end
+    end
+  end
+end
+
+function LP:OnCombatLog(moduleID, subevents, fn)
+  local set = {}
+  for i = 1, #subevents do set[subevents[i]] = true end
+  cleuHandlers[#cleuHandlers + 1] = { id = moduleID, subevents = set, fn = fn }
+  if #cleuHandlers == 1 then
+    LP:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED", "__cleu", function(...)
+      LP:DispatchCombatLog(...)
+    end)
+  end
+  return true
+end
+
 function LP:UnregisterModuleEvents(moduleID)
+  for i = #cleuHandlers, 1, -1 do
+    if cleuHandlers[i].id == moduleID then table.remove(cleuHandlers, i) end
+  end
   for event, list in pairs(eventOwners) do
     for i = #list, 1, -1 do
       if list[i].id == moduleID then table.remove(list, i) end

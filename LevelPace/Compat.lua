@@ -132,3 +132,23 @@ function util.ToNumber(s)
   local digits = string.match(s, "(%d+)")
   return digits and tonumber(digits) or nil
 end
+
+-- Decode a 3.3.5a creature GUID.
+--
+-- Format is "0x" plus 16 hex digits: 4 digits of type, 6 of creature entry,
+-- 6 of spawn counter. Returns nil for anything that is not a creature.
+--
+--   0xF13000020D02DD76
+--     F130            type   = HIGHGUID_UNIT
+--         00020D      entry  = 525   (Mangy Wolf)
+--               02DD76  spawn counter
+--
+-- The entry is 24 bits. Reading only sub(9,12) -- the low 16 -- is correct for
+-- every Blizzlike WotLK creature (max entry 38453) and silently decodes custom
+-- server NPCs at entry >= 65536 as 0.
+function util.CreatureID(guid)
+  if type(guid) ~= "string" then return nil end
+  if string.len(guid) ~= 18 then return nil end
+  if string.upper(string.sub(guid, 3, 6)) ~= "F130" then return nil end
+  return tonumber(string.sub(guid, 7, 12), 16)
+end

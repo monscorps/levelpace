@@ -69,4 +69,48 @@ h.run("firing an event with no handlers is safe", function()
   h.eq(pcall(fire, LP, "SOMETHING_ELSE"), true, "no error")
 end)
 
+h.run("combat log dispatches only the subevents a module asked for", function()
+  local LP = load()
+  local seen = {}
+  LP:OnCombatLog("m", { "UNIT_DIED" }, function(_, subevent) seen[#seen + 1] = subevent end)
+  -- NORMATIVE 3.3.5a order: 8 base args, no hideCaster, no raid flags.
+  fire(LP, "COMBAT_LOG_EVENT_UNFILTERED",
+       1, "UNIT_DIED",     "0x1", "Src", 0, "0xF13000020D02DD76", "Wolf", 0)
+  fire(LP, "COMBAT_LOG_EVENT_UNFILTERED",
+       2, "SPELL_DAMAGE",  "0x1", "Src", 0, "0xF13000020D02DD76", "Wolf", 0)
+  h.eq(#seen, 1, "only the subscribed subevent")
+  h.eq(seen[1], "UNIT_DIED", "the right one")
+end)
+
+h.run("combat log preserves the full 3.3.5a argument order", function()
+  local LP = load()
+  local a = {}
+  LP:OnCombatLog("m", { "PARTY_KILL" }, function(...)
+    for i = 1, select("#", ...) do a[i] = (select(i, ...)) end
+  end)
+  fire(LP, "COMBAT_LOG_EVENT_UNFILTERED",
+       99, "PARTY_KILL", "0xSRC", "Killer", 1, "0xF13000020D02DD76", "Wolf", 2, "extra")
+  h.eq(a[1], 99, "timestamp")
+  h.eq(a[2], "PARTY_KILL", "subevent")
+  h.eq(a[3], "0xSRC", "srcGUID")
+  h.eq(a[4], "Killer", "srcName")
+  h.eq(a[5], 1, "srcFlags")
+  h.eq(a[6], "0xF13000020D02DD76", "dstGUID")
+  h.eq(a[7], "Wolf", "dstName")
+  h.eq(a[8], 2, "dstFlags")
+  h.eq(a[9], "extra", "trailing args pass through")
+end)
+
+h.run("disabling a module stops its combat log handler", function()
+  local LP = load()
+  local n = 0
+  LP:RegisterModule({ id = "m" })
+  LP:OnCombatLog("m", { "UNIT_DIED" }, function() n = n + 1 end)
+  fire(LP, "COMBAT_LOG_EVENT_UNFILTERED", 1, "UNIT_DIED", "0x1", "S", 0, "0x2", "D", 0)
+  h.eq(n, 1, "received while enabled")
+  LP:UnregisterModuleEvents("m")
+  fire(LP, "COMBAT_LOG_EVENT_UNFILTERED", 2, "UNIT_DIED", "0x1", "S", 0, "0x2", "D", 0)
+  h.eq(n, 1, "silent after unregister")
+end)
+
 os.exit(h.report() and 0 or 1)
