@@ -4,6 +4,7 @@ local h = require("harness")
 local function load()
   h.load("LevelPace/Core.lua")
   h.load("LevelPace/Compat.lua")
+  h.load("LevelPace/Data/Icons.lua")
   h.load("LevelPace/Modules/Nemesis.lua")
   local LP = _G.LevelPace
   LP:InitDB()
@@ -261,6 +262,92 @@ h.run("alerts stay silent when that event is switched off", function()
   h.eq(#(h.state.sounds or {}), 0, "no sound")
 end)
 
+-- ==== live team ranking ====
+
+local function team(rows)
+  h.state.faction = "Alliance"
+  h.state.playerName = "Me"
+  local out = {}
+  for _, r in ipairs(rows) do
+    -- Field names match GetBattlefieldScore's returns, not our own shorthand.
+    out[#out + 1] = { name = r[1], faction = 1, damageDone = r[2],
+                      healingDone = r[3], killingBlows = r[4] or 0 }
+  end
+  -- An enemy present in the scoreboard must never enter the team population.
+  out[#out + 1] = { name = "EnemyAce", faction = 0,
+                    damageDone = 999999, healingDone = 999999 }
+  h.state.bgScores = out
+end
+
+h.run("ranks your damage against your own team only", function()
+  local LP, N = load()
+  team({ { "Me", 500, 0 }, { "Mate1", 100, 0 }, { "Mate2", 300, 0 } })
+  local r = N:TeamRanking()
+  h.eq(r.teamSize, 3, "enemy excluded from the team")
+  h.eq(r.damage.value, 500, "my damage")
+  h.eq(r.damage.place, 1, "top of the team")
+  h.eq(r.damage.pct, 100, "100th percentile with n-1")
+  h.eq(r.damage.of, 3, "measured against 3")
+end)
+
+h.run("the n-1 divisor is used, so the top of two is 100 not 50", function()
+  local LP, N = load()
+  team({ { "Me", 500, 0 }, { "Mate1", 100, 0 } })
+  h.eq(N:TeamRanking().damage.pct, 100, "top of two is 100")
+end)
+
+h.run("a band is attached to the ranking", function()
+  local LP, N = load()
+  team({ { "Me", 500, 0 }, { "Mate1", 100, 0 }, { "Mate2", 300, 0 } })
+  local b = N:TeamRanking().damage.band
+  h.ok(b, "band present")
+  h.eq(b.id, "gold", "top of the team is a perfect parse")
+end)
+
+h.run("bottom of the team is grey, not an error", function()
+  local LP, N = load()
+  team({ { "Me", 10, 0 }, { "Mate1", 100, 0 }, { "Mate2", 300, 0 } })
+  local d = N:TeamRanking().damage
+  h.eq(d.pct, 0, "nobody below me")
+  h.eq(d.place, 3, "third")
+  h.eq(d.band.id, "grey", "grey band")
+end)
+
+h.run("healing is ranked only among teammates who actually healed", function()
+  local LP, N = load()
+  -- Three DPS at zero healing and two healers. Ranking a rogue's zero against
+  -- fifteen other zeroes is a number that looks like information and is not.
+  team({ { "Me", 100, 4000 }, { "Healer", 50, 8000 },
+         { "Dps1", 900, 0 }, { "Dps2", 800, 0 } })
+  local hl = N:TeamRanking().healing
+  h.eq(hl.of, 2, "only the two who healed")
+  h.eq(hl.participating, true, "I am one of them")
+  h.eq(hl.pct, 0, "the lower of two healers")
+end)
+
+h.run("a player who healed nothing is not ranked as a bad healer", function()
+  local LP, N = load()
+  team({ { "Me", 900, 0 }, { "Healer", 50, 8000 }, { "Healer2", 60, 4000 } })
+  local hl = N:TeamRanking().healing
+  h.eq(hl.participating, false, "not in the healing population")
+  h.eq(hl.pct, nil, "no percentile -- and so no misleading band")
+  h.eq(hl.band, nil, "no band")
+end)
+
+h.run("outside a battleground there is no ranking", function()
+  local LP, N = load()
+  h.state.bgScores = {}
+  h.eq(N:TeamRanking(), nil, "nil rather than a fake zero")
+end)
+
+h.run("a solo scoreboard gives no percentile", function()
+  local LP, N = load()
+  team({ { "Me", 500, 0 } })
+  local d = N:TeamRanking().damage
+  h.eq(d.pct, nil, "a population of one has nothing to compare against")
+  h.eq(d.band, nil, "and therefore no band")
+end)
+
 -- ==== PARTY_KILL must not count mobs ====
 
 local function partyKill(LP, dstGUID, dstName)
@@ -321,6 +408,41 @@ h.run("registers as a module and stops collecting when disabled", function()
   h.eq(m.default, true, "on by default")
   LP:SetModuleEnabled("nemesis", false)
   h.eq(LP:GetModule("nemesis").enabled, false, "disabled")
+end)
+
+-- ==== bands and icons ====
+
+h.run("bands cover the whole range in the right order", function()
+  local LP = load()
+  local d = LP.data
+  h.eq(#d.BANDS, 7, "five item qualities plus WCL's pink and gold")
+  h.eq(d.BandFor(0).id,   "grey",   "bottom")
+  h.eq(d.BandFor(24).id,  "grey",   "just below uncommon")
+  h.eq(d.BandFor(25).id,  "green",  "uncommon starts at 25")
+  h.eq(d.BandFor(60).id,  "blue",   "rare")
+  h.eq(d.BandFor(80).id,  "purple", "epic")
+  h.eq(d.BandFor(96).id,  "orange", "legendary")
+  h.eq(d.BandFor(99).id,  "pink",   "the WCL pink")
+  h.eq(d.BandFor(100).id, "gold",   "a perfect parse")
+  h.eq(d.BandFor(nil), nil, "no percentile means no band, never a default")
+end)
+
+h.run("every achievement has a real icon, not the question mark", function()
+  local LP = load()
+  h.load("LevelPace/PvP.lua")
+  -- A new achievement added without an icon would silently ship the
+  -- question-mark texture, which looks like a bug to the player and is
+  -- invisible to everyone else.
+  for _, a in ipairs(LP.PvP.ACHIEVEMENTS) do
+    h.ok(LP.data.AchievementIcon(a.id) ~= LP.data.ICON_FALLBACK,
+         a.id .. " has a mapped icon")
+  end
+end)
+
+h.run("an unknown achievement id degrades to the fallback rather than nil", function()
+  local LP = load()
+  h.eq(LP.data.AchievementIcon("does-not-exist"), LP.data.ICON_FALLBACK,
+       "SetTexture(nil) would draw nothing at all")
 end)
 
 os.exit(h.report() and 0 or 1)

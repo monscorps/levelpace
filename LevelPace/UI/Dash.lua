@@ -11,6 +11,7 @@
 --   { kind = "header", text = }
 --   { kind = "stat",   label = , value = , note = }
 --   { kind = "list",   title = , items = { { text = , sub = }, ... } }
+--   { kind = "meter",  label = , pct = , band = , value = , note = }
 --   { kind = "empty",  text = }
 
 local LP = _G.LevelPace
@@ -156,6 +157,32 @@ local function ensureFrame()
   return f
 end
 
+-- Meter bars are pooled the same way font strings are: frames are never
+-- garbage collected on 3.3.5a, so a redraw must reuse them, never allocate.
+local function meterBar(f, i)
+  f.bars = f.bars or {}
+  if f.bars[i] then return f.bars[i] end
+  local bar = CreateFrame("StatusBar", "LevelPaceDashBar" .. i, f)
+  bar:SetMinMaxValues(0, 100)
+  bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+  bar.bg = bar:CreateTexture("LevelPaceDashBarBG" .. i)
+  if bar.bg.SetAllPoints then bar.bg:SetAllPoints(bar) end
+  if bar.bg.SetDrawLayer then bar.bg:SetDrawLayer("BACKGROUND") end
+  f.bars[i] = bar
+  return bar
+end
+
+local function iconTexture(f, i)
+  f.icons = f.icons or {}
+  if f.icons[i] then return f.icons[i] end
+  local t = f:CreateTexture("LevelPaceDashIcon" .. i)
+  -- Trim the 4px transparent border every stock WoW icon carries, so it does
+  -- not float inside its own padding next to the text.
+  if t.SetTexCoord then t:SetTexCoord(0.07, 0.93, 0.07, 0.93) end
+  f.icons[i] = t
+  return t
+end
+
 local function fontString(f, i)
   if f.rowStrings[i] then return f.rowStrings[i] end
   local fs = f:CreateFontString("LevelPaceDashRow" .. i)
@@ -202,6 +229,8 @@ function D:Refresh()
   local rows = self:Content()
   local y = -(PAD + ROW_H + 6)
   local n = 0
+  local nBars = 0
+  local nIcons = 0
 
   local function put(text, colour, indent)
     n = n + 1
@@ -231,16 +260,59 @@ function D:Refresh()
         local it = r.items[j]
         local text = tostring(it.text or "")
         if it.sub then text = text .. "  |cff8c8c94" .. it.sub .. "|r" end
-        put(text, s.colors.value, 10)
+        local indent = 10
+        if it.icon then
+          nIcons = nIcons + 1
+          local tex = iconTexture(f, nIcons)
+          tex:SetTexture(it.icon)
+          tex:SetWidth(ROW_H - 2)
+          tex:SetHeight(ROW_H - 2)
+          tex:ClearAllPoints()
+          tex:SetPoint("TOPLEFT", f, "TOPLEFT", PAD + 8, y - 1)
+          if tex.SetDrawLayer then tex:SetDrawLayer("ARTWORK") end
+          if tex.Show then tex:Show() end
+          indent = 10 + ROW_H + 4
+        end
+        put(text, it.colour or s.colors.value, indent)
       end
+    elseif r.kind == "meter" then
+      nBars = nBars + 1
+      local bar = meterBar(f, nBars)
+      local c = r.band or s.colors.value
+      bar:SetValue(r.pct or 0)
+      if bar.SetStatusBarColor then bar:SetStatusBarColor(c.r, c.g, c.b, 1) end
+      if bar.bg and bar.bg.SetTexture then bar.bg:SetTexture(0.1, 0.1, 0.12, 0.8) end
+      bar:SetWidth(WIDTH - PAD * 2)
+      bar:SetHeight(9)
+      bar:ClearAllPoints()
+      bar:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, y - ROW_H + 2)
+      if bar.Show then bar:Show() end
+
+      -- The label carries the number. A bar alone tells you "quite good"; the
+      -- percentile and the placing tell you what that means.
+      local text = (r.label or "")
+      if r.value then text = text .. ":  |cffffffff" .. tostring(r.value) .. "|r" end
+      if r.pct then
+        text = text .. "   " .. string.format("%.0f", r.pct) .. "%"
+      end
+      if r.note then text = text .. "  |cff8c8c94" .. r.note .. "|r" end
+      put(text, r.band or s.colors.label)
+      y = y - 11
     elseif r.kind == "empty" then
       put(r.text or "nothing yet", s.colors.note)
     end
   end
 
-  -- Retire any font strings left over from a longer previous render.
+  -- Retire anything left over from a longer previous render, or a stale bar
+  -- would sit under the new layout showing last frame's number.
   for i = n + 1, #f.rowStrings do
     if f.rowStrings[i].Hide then f.rowStrings[i]:Hide() end
+  end
+  for i = nBars + 1, #(f.bars or {}) do
+    if f.bars[i].Hide then f.bars[i]:Hide() end
+  end
+  for i = nIcons + 1, #(f.icons or {}) do
+    if f.icons[i].Hide then f.icons[i]:Hide() end
   end
 end
 

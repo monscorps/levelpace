@@ -152,6 +152,73 @@ function N:PollRoster()
 end
 
 -- ---------------------------------------------------------------------------
+-- Live team ranking
+--
+-- Where you sit against YOUR OWN TEAM in the battleground you are in right
+-- now, coloured with the same bands as every other board.
+--
+-- Damage is ranked against every teammate, because everyone deals some.
+-- Healing is ranked only against teammates who actually healed: ranking a
+-- rogue's zero healing against fifteen other zeroes produces a number that
+-- looks like information and is not. Each result carries the population it
+-- was measured against so the UI can say "3rd of 9" rather than implying the
+-- whole team was the field.
+-- ---------------------------------------------------------------------------
+
+function N:ScanTeam()
+  local out = {}
+  if not GetNumBattlefieldScores or not GetBattlefieldScore then return out end
+  local mine = UnitFactionGroup and UnitFactionGroup("player")
+  local want = (mine == "Horde") and FACTION_HORDE or FACTION_ALLIANCE
+  for i = 1, GetNumBattlefieldScores() do
+    -- damageDone is return 11, healingDone is 12 (WorldStateFrame.lua:662).
+    local name, kb, _, deaths, _, faction, _, _, _, _, damage, healing =
+      GetBattlefieldScore(i)
+    if name and faction == want then
+      out[#out + 1] = {
+        name = name, killingBlows = kb or 0, deaths = deaths or 0,
+        damage = damage or 0, healing = healing or 0,
+      }
+    end
+  end
+  return out
+end
+
+local function rankWithin(rows, field, meName, requireNonZero)
+  local values, mine = {}, nil
+  for i = 1, #rows do
+    local v = rows[i][field] or 0
+    if rows[i].name == meName then mine = v end
+    if (not requireNonZero) or v > 0 then values[#values + 1] = v end
+  end
+  if mine == nil then return nil end
+  if requireNonZero and mine <= 0 then
+    -- Not part of this population, and saying "bottom" would be misleading.
+    return { value = 0, pct = nil, band = nil, of = #values, participating = false }
+  end
+  local pct = LP.util.RankPercentile(mine, values)
+  local place = 1
+  for i = 1, #values do if values[i] > mine then place = place + 1 end end
+  return {
+    value = mine, pct = pct, of = #values, place = place, participating = true,
+    band = pct and LP.data and LP.data.BandFor and LP.data.BandFor(pct) or nil,
+  }
+end
+
+function N:TeamRanking()
+  local rows = self:ScanTeam()
+  if #rows == 0 then return nil end
+  local me = UnitName and UnitName("player") or nil
+  if not me then return nil end
+  return {
+    teamSize = #rows,
+    damage  = rankWithin(rows, "damage",  me, false),
+    healing = rankWithin(rows, "healing", me, true),
+    kills   = rankWithin(rows, "killingBlows", me, false),
+  }
+end
+
+-- ---------------------------------------------------------------------------
 -- Kills, deaths, streaks
 -- ---------------------------------------------------------------------------
 
@@ -367,6 +434,31 @@ function N:PrintSummary()
     end
   end
 
+  -- Achievements, newest first, with their icons.
+  if LP.PvP and LP.PvP.EarnedAchievements then
+    local ok, earned = pcall(function() return LP.PvP:EarnedAchievements() end)
+    if ok and type(earned) == "table" then
+      local items = {}
+      for i = 1, #earned do
+        local a = earned[i]
+        if a.earned then
+          items[#items + 1] = {
+            text = a.name,
+            sub = a.desc,
+            icon = LP.data and LP.data.AchievementIcon and
+                   LP.data.AchievementIcon(a.id) or nil,
+            -- Earned achievements get the gold of a perfect parse; it is the
+            -- one place in the addon where a fixed colour beats a computed one.
+            colour = LP.data and LP.data.BANDS and LP.data.BANDS[#LP.data.BANDS],
+          }
+        end
+      end
+      if #items > 0 then
+        rows[#rows + 1] = { kind = "list", title = "Achievements", items = items }
+      end
+    end
+  end
+
   local known, total = self:GuildCoverage()
   if total > 0 then
     LP:Print(string.format("enemy guilds known: %d of %d (only those you target)",
@@ -405,8 +497,44 @@ end
 
 function N:Dashboard()
   local s = self:Lifetime()
-  local rows = {
-    { kind = "header", text = "Battlegrounds" },
+  local rows = {}
+
+  -- Live standing FIRST, when there is one: in a battleground this is the
+  -- thing you actually want to glance at, and lifetime totals are not.
+  local live = self:TeamRanking()
+  if live then
+    rows[#rows + 1] = { kind = "header", text = "This battleground" }
+
+    local d = live.damage
+    if d then
+      rows[#rows + 1] = {
+        kind = "meter", label = "Damage", pct = d.pct, band = d.band,
+        value = LP.util.FormatNumber(d.value),
+        note = d.pct and string.format("%d of %d", d.place, d.of)
+               or "no one to compare against",
+      }
+    end
+
+    local hl = live.healing
+    if hl then
+      if hl.participating then
+        rows[#rows + 1] = {
+          kind = "meter", label = "Healing", pct = hl.pct, band = hl.band,
+          value = LP.util.FormatNumber(hl.value),
+          note = hl.pct and string.format("%d of %d healers", hl.place, hl.of)
+                 or "only healer so far",
+        }
+      else
+        -- Ranking a rogue's zero healing against a team of zeroes would look
+        -- like information and be none. Say why the bar is absent instead.
+        rows[#rows + 1] = { kind = "stat", label = "Healing", value = "--",
+          note = "not healing this match" }
+      end
+    end
+  end
+
+  rows[#rows + 1] = { kind = "header", text = "Battlegrounds" }
+  local tail = {
     { kind = "stat", label = "Honorable kills", value = s.honorableKills,
       note = "lifetime" },
     { kind = "stat", label = "Record", value = s.wins .. "W  " .. s.losses .. "L",
@@ -416,6 +544,7 @@ function N:Dashboard()
     { kind = "stat", label = "Killstreak",
       value = self:CurrentStreak() .. "  (best " .. self:LongestStreak() .. ")" },
   }
+  for i = 1, #tail do rows[#rows + 1] = tail[i] end
 
   local top = self:TopNemeses(3)
   if #top > 0 then
@@ -431,6 +560,31 @@ function N:Dashboard()
   else
     rows[#rows + 1] = { kind = "empty",
       text = "No nemeses yet -- nobody is ahead of you." }
+  end
+
+  -- Achievements, newest first, with their icons.
+  if LP.PvP and LP.PvP.EarnedAchievements then
+    local ok, earned = pcall(function() return LP.PvP:EarnedAchievements() end)
+    if ok and type(earned) == "table" then
+      local items = {}
+      for i = 1, #earned do
+        local a = earned[i]
+        if a.earned then
+          items[#items + 1] = {
+            text = a.name,
+            sub = a.desc,
+            icon = LP.data and LP.data.AchievementIcon and
+                   LP.data.AchievementIcon(a.id) or nil,
+            -- Earned achievements get the gold of a perfect parse; it is the
+            -- one place in the addon where a fixed colour beats a computed one.
+            colour = LP.data and LP.data.BANDS and LP.data.BANDS[#LP.data.BANDS],
+          }
+        end
+      end
+      if #items > 0 then
+        rows[#rows + 1] = { kind = "list", title = "Achievements", items = items }
+      end
+    end
   end
 
   local known, total = self:GuildCoverage()

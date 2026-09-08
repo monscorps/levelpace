@@ -133,6 +133,25 @@ function util.ToNumber(s)
   return digits and tonumber(digits) or nil
 end
 
+-- Where `value` sits in `list`, as a percentile, EXCLUDING the entry itself.
+--
+-- The divisor is n-1, not n. With n, the top of a two-person population caps
+-- at 50, which is wrong -- that was a real bug on the levelling board and the
+-- same mistake is easy to repeat here. A population of one returns nil:
+-- there is nothing to compare against, and 100 would be a lie.
+function util.RankPercentile(value, list)
+  if type(value) ~= "number" or type(list) ~= "table" then return nil end
+  local others = #list - 1
+  if others <= 0 then return nil end
+  local below = 0
+  for i = 1, #list do
+    if list[i] < value then below = below + 1 end
+  end
+  local pct = (below / others) * 100
+  if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
+  return pct
+end
+
 -- Decode a 3.3.5a creature GUID.
 --
 -- Format is "0x" plus 16 hex digits: 4 digits of type, 6 of creature entry,
