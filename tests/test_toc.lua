@@ -67,10 +67,23 @@ h.run("the real login path reaches an enabled module", function()
   h.ok(LP.db, "ADDON_LOADED initialised the database")
 
   bf.scripts.OnEvent(bf, "PLAYER_LOGIN")
+
+  -- Assert the property, not a count: modules get added, and a test that has
+  -- to be edited every time one is added stops being read and starts being
+  -- updated reflexively.
   local order = LP:ModuleOrder()
-  h.eq(#order, 1, "one module registered")
-  h.eq(order[1], "levelpace", "it is levelpace")
-  h.eq(LP:GetModule("levelpace").enabled, true, "PLAYER_LOGIN enabled it")
+  h.ok(#order >= 1, #order .. " module(s) registered")
+
+  local byID = {}
+  for _, id in ipairs(order) do byID[id] = true end
+  h.ok(byID.levelpace, "levelpace is registered")
+
+  for _, id in ipairs(order) do
+    -- Every module ships enabled by default, so a fresh login must leave each
+    -- one actually running. A module registered but never enabled is the
+    -- silent-no-op failure this whole file exists to catch.
+    h.eq(LP:GetModule(id).enabled, true, id .. " was enabled by PLAYER_LOGIN")
+  end
 end)
 
 os.exit(h.report() and 0 or 1)

@@ -6,6 +6,10 @@
 -- fiction.
 
 local harness = {}
+
+-- Fixed unix base so time() is deterministic across runs but distinct from
+-- GetTime(). 2025-09-04T00:00:00Z.
+local TIME_BASE = 1756944000
 local clock = 0
 
 harness.state = {}
@@ -71,8 +75,14 @@ end
 harness.stubFrame = stubFrame
 
 local function installGlobals()
+  -- GetTime() is seconds since the client started: it RESTARTS AT ZERO every
+  -- session. time() is a unix timestamp: wall clock, monotonic across
+  -- sessions. Conflating them is not academic -- persisting a GetTime() value
+  -- and comparing it next login is a bug this project has already shipped
+  -- once (every stored kill read as future-dated, so every achievement fired).
+  -- Keeping them distinct here is what lets a test catch it.
   _G.GetTime = function() return clock end
-  _G.time = function() return math.floor(clock) end
+  _G.time = function() return TIME_BASE + math.floor(clock) end
   -- WoW's date() mirrors os.date, including the "*t" form that returns a
   -- TABLE with wday/hour/min/sec. Returning a bare string here hid a real
   -- bug: a string is truthy, so an `if not t` guard passes and t.wday is nil.
