@@ -86,12 +86,34 @@ COMPANION="$LB/LevelPace Companion.bat"
   printf 'REM\r\n'
   printf 'REM  Nothing is installed. It uses the PowerShell already in Windows.\r\n'
   printf 'REM ==========================================================================\r\n'
-  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -Command "try{$s=[IO.File]::ReadAllText(\x27%%~f0\x27);iex ($s.Substring($s.IndexOf(\x27#PS\x27+\x27START\x27)))}catch{[IO.File]::WriteAllText($env:TEMP+\x27\\LevelPace-startup-error.txt\x27,$_.Exception.ToString())}"\r\n'
+  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -Command "$env:LEVELPACE_BAT=\x27%%~f0\x27;try{$s=[IO.File]::ReadAllText($env:LEVELPACE_BAT);iex ($s.Substring($s.IndexOf(\x27#PS\x27+\x27START\x27)))}catch{[IO.File]::WriteAllText($env:TEMP+\x27\\LevelPace-startup-error.txt\x27,$_.Exception.ToString())}"\r\n'
   printf 'exit /b\r\n'
   printf '#PSSTART\r\n'
   perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1
 } > "$COMPANION"
 echo "  built companion: $(basename "$COMPANION")"
+
+# A second launcher that shows everything. When the normal one "flashes and
+# closes" there is nothing to look at: -WindowStyle Hidden hides the window and
+# a crash takes the console with it. This one keeps the window open and prints
+# the error, which turns "it did not work" into something actionable.
+DEBUG_BAT="$LB/LevelPace Companion (SHOW ERRORS).bat"
+{
+  printf '@echo off\r\n'
+  printf 'REM ==========================================================================\r\n'
+  printf 'REM  Only run this if the normal launcher did nothing.\r\n'
+  printf 'REM\r\n'
+  printf 'REM  Same program, but the window STAYS OPEN and prints what went wrong.\r\n'
+  printf 'REM  Copy everything you see and send it back.\r\n'
+  printf 'REM ==========================================================================\r\n'
+  printf 'echo Starting LevelPace Companion with errors visible...\r\n'
+  printf 'echo.\r\n'
+  printf 'powershell -NoProfile -ExecutionPolicy Bypass -STA -NoExit -Command "$env:LEVELPACE_BAT=\x27%%~f0\x27;$ErrorActionPreference=\x27Continue\x27;Write-Host (\x27PowerShell \x27 + $PSVersionTable.PSVersion.ToString()) -Foreground Cyan;try{$s=[IO.File]::ReadAllText($env:LEVELPACE_BAT);$i=$s.IndexOf(\x27#PS\x27+\x27START\x27);Write-Host (\x27marker at \x27 + $i) -Foreground Cyan;iex ($s.Substring($i))}catch{Write-Host \x27=== FAILED ===\x27 -Foreground Red;$e=$_.Exception;while($e){Write-Host ($e.GetType().Name + \x27: \x27 + $e.Message) -Foreground Red;$e=$e.InnerException};Write-Host (\x27at line \x27 + $_.InvocationInfo.ScriptLineNumber) -Foreground Yellow;Write-Host $_.InvocationInfo.Line -Foreground Yellow}"\r\n'
+  printf 'exit /b\r\n'
+  printf '#PSSTART\r\n'
+  perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1
+} > "$DEBUG_BAT"
+echo "  built debug launcher: $(basename "$DEBUG_BAT")"
 
 # Verify the weld. This shipped broken once and nothing about it was visible
 # from a Mac, so it is a build gate rather than something to remember.

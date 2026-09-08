@@ -18,7 +18,19 @@
 
 $ErrorActionPreference = 'Stop'
 $Version  = '0.4.0'
-$Root     = Split-Path -Parent $MyInvocation.MyCommand.Path
+# $MyInvocation.MyCommand.Path is NULL when a script is run through
+# Invoke-Expression -- which is exactly how the welded .bat runs this one.
+# Combined with $ErrorActionPreference = 'Stop' set on the line above,
+# `Split-Path -Parent $null` is a TERMINATING error, so the app died here, on
+# line 4, before anything existed to show. The window flashed and closed and
+# left nothing behind. The launcher exports the .bat path for this reason.
+$Root = $null
+if ($env:LEVELPACE_BAT) {
+    $Root = Split-Path -Parent $env:LEVELPACE_BAT
+} elseif ($MyInvocation.MyCommand.Path) {
+    $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+if (-not $Root) { $Root = (Get-Location).Path }
 $LogPath  = Join-Path $env:LOCALAPPDATA 'LevelPace\companion.log'
 $script:LastStatus = 'starting'
 

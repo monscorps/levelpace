@@ -76,5 +76,82 @@ foreach ($needle in @('NotifyIcon', 'Application]::Run', 'ContextMenuStrip')) {
     }
 }
 
-Write-Host "companion weld OK (payload extracts, parses, and builds a tray icon)"
+# 7. RUN it.
+#
+# Parsing is not enough and this project learned that the expensive way: the
+# payload parsed perfectly and still died on line 4, because
+# $MyInvocation.MyCommand.Path is NULL under Invoke-Expression and
+# `Split-Path -Parent $null` is a terminating error with $ErrorActionPreference
+# set to Stop. Nothing catches that except running it.
+#
+# On macOS the script cannot get past the Windows-only tray icon, and that is
+# the point: it must reach THAT line and fail there, not somewhere earlier. If
+# it dies before Windows Forms, something is wrong that would also be wrong on
+# Windows.
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("lp-verify-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+$payloadFile = Join-Path $tmp 'payload.ps1'
+[IO.File]::WriteAllText($payloadFile, $payload)
+
+# Run the payload and unwrap the WHOLE exception chain.
+#
+# Running it with -File reports this as "An error occurred while creating the
+# pipeline", which names nothing. The real cause is only in the INNER
+# exception, so catch it and walk the chain.
+$env:LEVELPACE_BAT = (Resolve-Path $Bat).Path
+$env:LOCALAPPDATA  = $tmp
+$env:TEMP          = $tmp
+$pwshPath = (Get-Process -Id $PID).Path
+
+# Invoke-Expression on the STRING, exactly as the launcher does -- NOT `& file`.
+# This distinction is the whole point. Run as a file, $MyInvocation.MyCommand.Path
+# is populated and the script works; run through iex it is NULL, and that is
+# the mode that shipped broken. A test that runs it the easy way proves nothing.
+# Reproduce the launcher's execution mode EXACTLY: -Command (no script file
+# at all) running Invoke-Expression on the payload string.
+#
+# This fidelity is the entire value of the test. Run the payload as a file,
+# or iex it from inside a file, and $MyInvocation.MyCommand.Path is populated
+# and the bug vanishes. Only -Command + iex leaves it NULL, and that is the
+# mode that shipped broken twice.
+$probeSrc = @"
+try {
+    `$code = [IO.File]::ReadAllText('$payloadFile')
+    Invoke-Expression `$code
+    Write-Output 'REACHED_END'
+} catch {
+    `$e = `$_.Exception
+    `$chain = @()
+    while (`$e) { `$chain += (`$e.GetType().Name + ': ' + `$e.Message); `$e = `$e.InnerException }
+    Write-Output ('FAILED::line ' + `$_.InvocationInfo.ScriptLineNumber + '::' + (`$chain -join ' <- '))
+}
+"@
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probeSrc))
+$out = & $pwshPath -NoProfile -EncodedCommand $encoded 2>&1 | Out-String
+Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+
+# Windows-only surfaces. Reaching one of these on a Mac is the expected
+# stopping point -- System.Drawing.Common in particular is simply unavailable
+# off Windows. Stopping ANYWHERE else is a bug that would also bite on Windows.
+$windowsOnly = 'PlatformNotSupported|System\.Drawing|Windows\.Forms|NotifyIcon|SystemIcons|ContextMenuStrip'
+
+if ($out -match 'REACHED_END') {
+    Write-Host "  (payload ran to completion)"
+} elseif ($out -match 'FAILED::(.+)') {
+    $detail = $Matches[1].Trim()
+    if ($detail -match $windowsOnly) {
+        Write-Host "  (runs until the Windows-only graphics code, as expected off Windows)"
+    } else {
+        Write-Host "payload fails BEFORE the Windows-only code:"
+        Write-Host ("  " + $detail)
+        Write-Host "  (that failure would happen on Windows too)"
+        exit 1
+    }
+} else {
+    Write-Host "payload produced no recognisable result:"
+    ($out -split "`n") | Select-Object -First 4 | ForEach-Object { Write-Host ("  " + $_.TrimEnd()) }
+    exit 1
+}
+
+Write-Host "companion weld OK (payload extracts, parses, runs to the Windows-only tray code)"
 exit 0
