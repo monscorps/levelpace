@@ -88,6 +88,11 @@ local function installGlobals()
   -- bug: a string is truthy, so an `if not t` guard passes and t.wday is nil.
   _G.date = function(fmt, t) return os.date(fmt or "%c", t) end
 
+  -- Core registers its slash handler only `if _G.SlashCmdList`. Without this
+  -- the guard skips registration and the entire command interface -- the way
+  -- players actually drive the addon -- goes untested.
+  _G.SlashCmdList = {}
+
   _G.strtrim = function(s) return (string.gsub(s, "^%s*(.-)%s*$", "%1")) end
   _G.strsplit = function(sep, str)
     local out = {}

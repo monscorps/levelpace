@@ -261,6 +261,57 @@ h.run("alerts stay silent when that event is switched off", function()
   h.eq(#(h.state.sounds or {}), 0, "no sound")
 end)
 
+-- ==== PARTY_KILL must not count mobs ====
+
+local function partyKill(LP, dstGUID, dstName)
+  LP:DispatchCombatLog(1, "PARTY_KILL", "0xSRC", "Me", 0, dstGUID, dstName, 0)
+end
+
+h.run("killing a player counts", function()
+  local LP, N = load()
+  partyKill(LP, "0x0000000000ABCDEF", "Squishy")
+  h.eq(N:Record("Squishy").kills, 1, "counted")
+  h.eq(N:CurrentStreak(), 1, "streak advanced")
+end)
+
+h.run("killing a mob does NOT count as a PvP kill", function()
+  local LP, N = load()
+  -- An afternoon of grinding must not inflate a battleground killstreak.
+  partyKill(LP, "0xF13000020D02DD76", "Mangy Wolf")
+  partyKill(LP, "0xF130007F1F000001", "Some Elite")
+  h.eq(N:CurrentStreak(), 0, "streak untouched by mobs")
+  h.eq(N:Record("Mangy Wolf").kills, 0, "no record created for a mob")
+end)
+
+h.run("killing a pet or a vehicle does not count either", function()
+  local LP, N = load()
+  partyKill(LP, "0xF140000C6D000001", "Hunter Pet")
+  partyKill(LP, "0xF150000C6D000001", "A Siege Engine")
+  h.eq(N:CurrentStreak(), 0, "streak untouched")
+end)
+
+h.run("a new best streak is only announced once it is worth announcing", function()
+  local LP, N = load()
+  LP.db.nemesis.sounds.streak = true
+  h.state.sounds = {}
+  N:RecordKill("A")
+  N:RecordKill("B")
+  h.eq(#h.state.sounds, 0, "streaks of 1 and 2 are not news on a fresh install")
+  N:RecordKill("C")
+  h.eq(#h.state.sounds, 1, "3 is")
+end)
+
+h.run("an alert switched off produces neither sound nor chat line", function()
+  local LP, N = load()
+  LP.db.nemesis.sounds.kill = false
+  h.state.sounds = {}
+  local printed = 0
+  LP.Print = function() printed = printed + 1 end
+  N:RecordKill("Squishy")
+  h.eq(#h.state.sounds, 0, "silent")
+  h.eq(printed, 0, "and no chat spam -- off means off")
+end)
+
 -- ==== module wiring ====
 
 h.run("registers as a module and stops collecting when disabled", function()

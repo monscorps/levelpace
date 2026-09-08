@@ -152,3 +152,16 @@ function util.CreatureID(guid)
   if string.upper(string.sub(guid, 3, 6)) ~= "F130" then return nil end
   return tonumber(string.sub(guid, 7, 12), 16)
 end
+
+-- True only for a player GUID. On 3.3.5a a player's high 16 bits are zero
+-- (0x0000000000ABCDEF), where creatures are 0xF130, pets 0xF140 and vehicles
+-- 0xF150.
+--
+-- This matters more than it looks: PARTY_KILL fires for ANY kill, including
+-- every mob you grind. Without this check a levelling session inflates your
+-- battleground killstreak and your PvP record.
+function util.IsPlayerGUID(guid)
+  if type(guid) ~= "string" then return false end
+  if string.len(guid) ~= 18 then return false end
+  return string.sub(guid, 3, 6) == "0000"
+end

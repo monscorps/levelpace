@@ -29,6 +29,9 @@ local MISSES_BEFORE_LEFT = 2
 
 local SOUND = "Sound\\Interface\\RaidWarning.wav"
 
+-- Below this, a "new best" is noise on a fresh install rather than news.
+local MIN_STREAK_TO_ANNOUNCE = 3
+
 local function db()
   if not LP.db then return nil end
   local d = LP.db.nemesis
@@ -167,7 +170,11 @@ function N:RecordKill(name)
   local d = db()
   if currentStreak > d.longestStreak then
     d.longestStreak = currentStreak
-    self:Alert("streak", "New best killstreak: " .. currentStreak)
+    -- On a fresh install every one of the first few kills is a "new best",
+    -- which is noise rather than news. Only shout once it is worth shouting.
+    if currentStreak >= MIN_STREAK_TO_ANNOUNCE then
+      self:Alert("streak", "New best killstreak: " .. currentStreak)
+    end
   end
   LP:Fire("NEMESIS_KILL", name, currentStreak)
   self:Alert("kill", "Killed " .. name)
@@ -326,11 +333,44 @@ end
 function N:Alert(kind, msg)
   local d = db()
   if not d then return end
+  -- One switch per event kind, gating BOTH the chat line and the sound.
+  -- Gating only the sound meant "kill alerts off" still spammed chat on
+  -- every kill, which is not what off means.
+  if not d.sounds[kind] then return end
   if msg then LP:Print(msg) end
-  if d.sounds[kind] and PlaySoundFile then
+  if PlaySoundFile then
     -- PlaySoundFile returns nothing on 3.3.5a: a bad path fails silently and
     -- there is no way to detect it, which is why the path is a constant.
     PlaySoundFile(SOUND)
+  end
+end
+
+function N:PrintSummary()
+  local s = self:Lifetime()
+  LP:Print(string.format("honorable kills: %d (lifetime, from the server)",
+                         s.honorableKills))
+  LP:Print(string.format("battlegrounds since install: %d won, %d lost",
+                         s.wins, s.losses))
+  LP:Print(string.format("killstreak: %d now, %d best",
+                         self:CurrentStreak(), self:LongestStreak()))
+
+  local top = self:TopNemeses(3)
+  if #top == 0 then
+    LP:Print("no nemeses yet -- nobody has killed you more than you killed them.")
+  else
+    LP:Print("top nemeses:")
+    for i = 1, #top do
+      local t = top[i]
+      LP:Print(string.format("  %d. %s%s -- %d death(s) to %d kill(s)",
+        i, t.name, t.guild and (" <" .. t.guild .. ">") or "",
+        t.deaths or 0, t.kills or 0))
+    end
+  end
+
+  local known, total = self:GuildCoverage()
+  if total > 0 then
+    LP:Print(string.format("enemy guilds known: %d of %d (only those you target)",
+                           known, total))
   end
 end
 
@@ -349,11 +389,14 @@ LP:RegisterModule({
   OnEnable = function()
     N:Init()
 
-    LP:OnCombatLog("nemesis", { "PARTY_KILL" }, function(_, _, _, _, _, _, dstName)
-      -- PARTY_KILL fires for the KILLER only and is unicast to their group:
-      -- the victim never sees it, so this is our kill, not someone else's.
-      if dstName then N:RecordKill(dstName) end
-    end)
+    LP:OnCombatLog("nemesis", { "PARTY_KILL" },
+      function(_, _, _, _, _, dstGUID, dstName)
+        -- PARTY_KILL fires for the KILLER only and is unicast to their group,
+        -- so this is our kill. But it fires for EVERY kill, mobs included --
+        -- without the player check, an afternoon of grinding would inflate
+        -- your killstreak and your PvP record.
+        if dstName and util.IsPlayerGUID(dstGUID) then N:RecordKill(dstName) end
+      end)
 
     LP:RegisterEvent("PLAYER_DEAD", "nemesis", function()
       N:RecordDeath(N.lastAttacker)

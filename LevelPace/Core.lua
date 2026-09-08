@@ -455,8 +455,35 @@ local function dispatch(input)
     LP:Fire("TOGGLE_SHOWN", true)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
+  elseif cmd == "rares" or cmd == "rare" then
+    if LP.RareFinder then LP.RareFinder:PrintSummary()
+    else LP:Print("rare finder not loaded") end
+  elseif cmd == "nemesis" or cmd == "nem" or cmd == "pvp" then
+    if LP.Nemesis then LP.Nemesis:PrintSummary()
+    else LP:Print("nemesis not loaded") end
+  elseif cmd == "modules" then
+    local order = LP:ModuleOrder()
+    LP:Print("modules (/lp toggle <id> to switch one off):")
+    for i = 1, #order do
+      local m = LP:GetModule(order[i])
+      LP:Print(string.format("  %s -- %s%s|r%s",
+        m.id,
+        LP:ModuleEnabled(m.id) and "|cff44dd44" or "|cffdd4444",
+        LP:ModuleEnabled(m.id) and "on" or "off",
+        m.desc and ("  " .. m.desc) or ""))
+    end
+  elseif cmd == "toggle" then
+    local id = string.lower(strtrim(rest or ""))
+    if not LP:GetModule(id) then
+      LP:Print("no such module: '" .. id .. "'. Try /lp modules")
+    else
+      local now = not LP:ModuleEnabled(id)
+      LP:SetModuleEnabled(id, now)
+      LP:Print(id .. " is now " .. (now and "on" or "off"))
+    end
   else
-    LP:Print("commands: board, reset, quests, share, lock, unlock, show, hide, debug")
+    LP:Print("commands: board, rares, nemesis, modules, toggle <id>, reset,")
+    LP:Print("          quests, share, lock, unlock, show, hide, debug")
   end
   LP.lastCommand = cmd
 end

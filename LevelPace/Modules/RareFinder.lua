@@ -160,6 +160,46 @@ function RF:Stats()
   return { total = #kills, mine = mine, unique = unique }
 end
 
+-- Most-killed rares, highest first.
+function RF:TopRares(n)
+  local counts, order = {}, {}
+  local kills = self:Kills()
+  for i = 1, #kills do
+    local k = kills[i]
+    if not counts[k.npc] then
+      counts[k.npc] = { npc = k.npc, name = k.name, n = 0 }
+      order[#order + 1] = counts[k.npc]
+    end
+    counts[k.npc].n = counts[k.npc].n + 1
+  end
+  table.sort(order, function(a, b)
+    if a.n ~= b.n then return a.n > b.n end
+    return (a.name or "") < (b.name or "")
+  end)
+  while #order > (n or 5) do table.remove(order) end
+  return order
+end
+
+function RF:PrintSummary()
+  local s = self:Stats()
+  if s.total == 0 then
+    LP:Print("no rare kills logged yet. Kill one, or stand near someone who does.")
+    return
+  end
+  LP:Print(string.format("rares: %d kill(s), %d yours, %d unique",
+                         s.total, s.mine, s.unique))
+  local top = self:TopRares(5)
+  for i = 1, #top do
+    LP:Print(string.format("  %d. %s x%d", i, top[i].name or "?", top[i].n))
+  end
+  local kills = self:Kills()
+  local last = kills[#kills]
+  if last and date then
+    LP:Print("  last: " .. (last.name or "?") .. " on " ..
+             tostring(date("%d %b %H:%M", last.t)))
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- Module
 -- ---------------------------------------------------------------------------
