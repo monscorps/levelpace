@@ -20,6 +20,7 @@ PvP.lua
 Baseline.lua
 Board.lua
 Export.lua
+UI\Lib.lua
 UI\Bar.lua
 UI\Box.lua
 UI\Gauge.lua
