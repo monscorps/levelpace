@@ -120,6 +120,10 @@ CREATE TABLE IF NOT EXISTS pvp (
     week_start     INTEGER,
     lifetime_kills INTEGER,
     deaths         INTEGER,
+    kills          INTEGER,    -- kills the addon actually observed
+    best_streak    INTEGER,
+    streak         INTEGER,
+    achievements   TEXT,       -- JSON array of earned ids
     nemesis        TEXT,       -- JSON array of {name, count}
     updated        INTEGER,
     FOREIGN KEY (id) REFERENCES players(id) ON DELETE CASCADE
@@ -216,6 +220,11 @@ class Store:
         cols = {r["name"] for r in c.execute("PRAGMA table_info(levels)")}
         if "flags" not in cols:
             c.execute("ALTER TABLE levels ADD COLUMN flags TEXT")
+        pvp_cols = {r["name"] for r in c.execute("PRAGMA table_info(pvp)")}
+        for name, decl in (("kills", "INTEGER"), ("best_streak", "INTEGER"),
+                           ("streak", "INTEGER"), ("achievements", "TEXT")):
+            if name not in pvp_cols:
+                c.execute("ALTER TABLE pvp ADD COLUMN %s %s" % (name, decl))
 
     def _conn(self):
         conn = getattr(self._local, "conn", None)
@@ -311,16 +320,22 @@ class Store:
             if isinstance(pvp, dict):
                 c.execute(
                     """INSERT INTO pvp (id, bracket, item_level, weekly_kills, week_start,
-                                        lifetime_kills, deaths, nemesis, updated)
-                       VALUES (?,?,?,?,?,?,?,?,?)
+                                        lifetime_kills, deaths, kills, best_streak,
+                                        streak, achievements, nemesis, updated)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(id) DO UPDATE SET
                          bracket=excluded.bracket, item_level=excluded.item_level,
                          weekly_kills=excluded.weekly_kills, week_start=excluded.week_start,
                          lifetime_kills=excluded.lifetime_kills, deaths=excluded.deaths,
+                         kills=excluded.kills, best_streak=excluded.best_streak,
+                         streak=excluded.streak, achievements=excluded.achievements,
                          nemesis=excluded.nemesis, updated=excluded.updated""",
                     (pid, _int(pvp.get("bracket")), _float(pvp.get("itemLevel")),
                      _int(pvp.get("weeklyKills")), _int(pvp.get("weekStart")),
                      _int(pvp.get("lifetimeKills")), _int(pvp.get("deaths")),
+                     _int(pvp.get("kills")), _int(pvp.get("bestStreak")),
+                     _int(pvp.get("streak")),
+                     json.dumps(pvp.get("achievements") or [])[:1000],
                      json.dumps(pvp.get("nemesis") or [])[:2000], now),
                 )
         return accepted, rejected, flagged
@@ -466,7 +481,8 @@ class Store:
         c = self._conn()
         q = """SELECT p.id, p.display, p.realm, p.class, p.faction, p.level,
                       v.bracket, v.item_level, v.weekly_kills, v.lifetime_kills,
-                      v.deaths, v.nemesis, v.updated
+                      v.deaths, v.kills, v.best_streak, v.streak,
+                      v.achievements, v.nemesis, v.updated
                FROM pvp v JOIN players p ON p.id = v.id"""
         args = []
         if bracket is not None:
@@ -480,6 +496,10 @@ class Store:
                 d["nemesis"] = json.loads(d.get("nemesis") or "[]")[:3]
             except Exception:
                 d["nemesis"] = []
+            try:
+                d["achievements"] = json.loads(d.get("achievements") or "[]")
+            except Exception:
+                d["achievements"] = []
             kills = d.get("lifetime_kills") or 0
             deaths = d.get("deaths") or 0
             d["kd"] = round(kills / deaths, 2) if deaths else (float(kills) if kills else 0.0)

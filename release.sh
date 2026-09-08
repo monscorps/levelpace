@@ -58,20 +58,20 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 0
 fi
 
+# The release page IS the link you hand out, so the notes matter more than
+# usual -- most people will never see the README. RELEASE_NOTES.md is written
+# for a player, not a developer; edit it before each release.
+NOTES_FILE="RELEASE_NOTES.md"
+if [ ! -f "$NOTES_FILE" ]; then
+  echo "no $NOTES_FILE -- the release page would be blank" >&2
+  exit 1
+fi
+
 gh release create "v$VERSION" \
   dist/LevelPace.zip \
   dist/LevelPace-Leaderboard.zip \
   --title "LevelPace v$VERSION" \
-  --notes "$(cat <<NOTES
-**LevelPace.zip** — the addon. Extract into \`Interface\\AddOns\\\` so you get
-\`Interface\\AddOns\\LevelPace\\LevelPace.toc\`.
-
-**LevelPace-Leaderboard.zip** — server and uploader. Not an addon; put it
-anywhere. Only needed if you are sending stats to a board or hosting one.
-
-See the [README](https://github.com/monscorps/levelpace#readme).
-NOTES
-)"
+  --notes-file "$NOTES_FILE"
 
 echo
 echo "done. Stable link for everyone:"

@@ -128,13 +128,28 @@ function PvP:Store()
     anchorLifetime = nil,   -- lifetime HK at the start of this week
     lifetime = 0,
     deaths = 0,
-    nemesis = {},           -- [guid] = { name, count, last }
+    nemesis = {},           -- [guid] = { name, count, last }  they killed me
+    victims = {},           -- [guid] = { name, count, last }  I killed them
+    streak = 0,             -- consecutive kills without dying
+    bestStreak = 0,
+    kills = 0,              -- kills we actually SAW, distinct from lifetime HK
+    achievements = {},      -- [id] = unix seconds earned
     itemLevel = nil,
     slotsCounted = 0,
     heirlooms = 0,
     missingSlots = 0,
   }
-  return LP.db.pvp
+  local s = LP.db.pvp
+  -- Fields added after a player's first install.
+  s.victims = s.victims or {}
+  s.achievements = s.achievements or {}
+  -- Written by an earlier version; meaningless across sessions (see
+  -- KillsWithin) so drop it rather than let it accumulate.
+  s.recentKills = nil
+  s.streak = s.streak or 0
+  s.bestStreak = s.bestStreak or 0
+  s.kills = s.kills or 0
+  return s
 end
 
 -- Roll the weekly anchor forward when the week has turned over.
@@ -276,6 +291,10 @@ function PvP:NoteDeath(now)
   end
 
   s.deaths = (s.deaths or 0) + 1
+  -- The streak ends here. Remember who ended it, so killing them next earns
+  -- Revenge rather than just being another kill.
+  s.streak = 0
+  self.pendingRevenge = a.guid
   s.nemesis = s.nemesis or {}
   -- Keyed on GUID, not name: sourceName arrives nil when the attacker is not
   -- in the client's object cache (stealth openers, long range), and names are
@@ -290,7 +309,211 @@ function PvP:NoteDeath(now)
   end
   self.lastAttacker = nil
   LP:Fire("PVP_DEATH", a.name)
+  -- Dying can earn something too (Humbled, Even Score going the wrong way).
+  self:CheckAchievements(now)
   return a.name
+end
+
+-- ---------------------------------------------------------------------------
+-- Your own kills, and streaks
+--
+-- Unlike deaths, this half is EXACT. PARTY_KILL fires for the killer, so when
+-- the source is us and the victim is a player, that is a real kill with a
+-- real name -- no heuristic. (It never reaches the victim, which is precisely
+-- why the nemesis side has to guess.)
+-- ---------------------------------------------------------------------------
+
+local BURST_WINDOW = 60   -- seconds, for the "several kills quickly" awards
+
+function PvP:NoteKill(dstGUID, dstName, dstFlags, now)
+  if not dstGUID or not isPlayer(dstFlags) then return end
+  if dstGUID == self.playerGUID then return end
+  local s = self:Store()
+  if not s then return end
+
+  s.kills = (s.kills or 0) + 1
+  s.streak = (s.streak or 0) + 1
+  if s.streak > (s.bestStreak or 0) then s.bestStreak = s.streak end
+
+  local v = s.victims[dstGUID]
+  if v then
+    v.count = v.count + 1
+    v.last = now
+    if dstName then v.name = dstName end
+  else
+    s.victims[dstGUID] = { name = dstName or "Unknown", count = 1, last = now }
+  end
+
+  self.recentKills = self.recentKills or {}
+  util.PushBounded(self.recentKills, now, 40)
+
+  self.lastKill = { guid = dstGUID, name = dstName, t = now }
+  LP:Fire("PVP_KILL", dstName, s.streak)
+  self:CheckAchievements(now)
+end
+
+-- Kills inside the last `window` seconds.
+--
+-- Deliberately NOT persisted. These are GetTime() values, and GetTime()
+-- restarts at zero every session -- so a stored timestamp from last night is
+-- larger than this session's clock, `now - t` comes out negative, and every
+-- old kill counts as "just now". That is an instant false Bloodbath on every
+-- login. Burst detection only means anything within one session anyway.
+function PvP:KillsWithin(window, now)
+  now = now or (GetTime and GetTime()) or 0
+  local n = 0
+  for _, t in ipairs(self.recentKills or {}) do
+    local age = now - t
+    -- Belt and braces: reject future timestamps as well as old ones.
+    if age >= 0 and age <= window then n = n + 1 end
+  end
+  return n
+end
+
+-- ---------------------------------------------------------------------------
+-- Achievements
+--
+-- Deliberately built only from things we can actually observe. Nothing here
+-- depends on the reconstructed weekly counter, and nothing claims to know
+-- something the client cannot see.
+--
+-- Each entry: id, name, blurb, and check(store, self, now) -> boolean.
+-- ---------------------------------------------------------------------------
+
+PvP.ACHIEVEMENTS = {
+  { id = "firstblood", name = "First Blood",
+    blurb = "Kill another player.",
+    check = function(s) return (s.kills or 0) >= 1 end },
+
+  { id = "tencount", name = "Ten Count",
+    blurb = "Kill 10 players.",
+    check = function(s) return (s.kills or 0) >= 10 end },
+
+  { id = "century", name = "Century",
+    blurb = "Kill 100 players.",
+    check = function(s) return (s.kills or 0) >= 100 end },
+
+  { id = "streak5", name = "On A Roll",
+    blurb = "5 kills without dying.",
+    check = function(s) return (s.bestStreak or 0) >= 5 end },
+
+  { id = "streak10", name = "Untouchable",
+    blurb = "10 kills without dying.",
+    check = function(s) return (s.bestStreak or 0) >= 10 end },
+
+  { id = "streak25", name = "Unstoppable",
+    blurb = "25 kills without dying. Someone is having a bad evening.",
+    check = function(s) return (s.bestStreak or 0) >= 25 end },
+
+  { id = "bloodbath", name = "Bloodbath",
+    blurb = "5 kills inside a minute.",
+    check = function(s, self, now) return self:KillsWithin(BURST_WINDOW, now) >= 5 end },
+
+  { id = "revenge", name = "Revenge",
+    blurb = "Kill the player who killed you last.",
+    check = function(s, self)
+      local k = self.lastKill
+      local avenged = self.pendingRevenge
+      return k and avenged and k.guid == avenged
+    end },
+
+  { id = "nemesisdown", name = "Nemesis Down",
+    blurb = "Kill someone who has killed you at least three times.",
+    check = function(s, self)
+      local k = self.lastKill
+      if not k then return false end
+      local n = s.nemesis[k.guid]
+      return n and n.count >= 3
+    end },
+
+  { id = "evenscore", name = "Even Score",
+    blurb = "Draw level with a nemesis who had killed you 5+ times.",
+    check = function(s)
+      for guid, n in pairs(s.nemesis) do
+        if n.count >= 5 then
+          local v = s.victims[guid]
+          if v and v.count >= n.count then return true end
+        end
+      end
+      return false
+    end },
+
+  { id = "archrival", name = "Arch-Rival",
+    blurb = "Trade at least 10 kills each way with the same player.",
+    check = function(s)
+      for guid, n in pairs(s.nemesis) do
+        local v = s.victims[guid]
+        if n.count >= 10 and v and v.count >= 10 then return true end
+      end
+      return false
+    end },
+
+  { id = "humbled", name = "Humbled",
+    blurb = "Die to the same player 10 times. It happens.",
+    check = function(s)
+      for _, n in pairs(s.nemesis) do
+        if n.count >= 10 then return true end
+      end
+      return false
+    end },
+
+  { id = "wellrounded", name = "Well Rounded",
+    blurb = "Kill 10 different players.",
+    check = function(s)
+      local n = 0
+      for _ in pairs(s.victims) do n = n + 1 end
+      return n >= 10
+    end },
+
+  { id = "geared", name = "Kitted Out",
+    blurb = "Reach item level 40 while under level 20.",
+    check = function(s)
+      local lvl = (UnitLevel and UnitLevel("player")) or 99
+      return lvl < 20 and (s.itemLevel or 0) >= 40
+    end },
+}
+
+-- `gameNow` is a GetTime() value -- the same clock the kill timestamps use.
+-- The stamp RECORDED against an earned achievement is wall-clock time(), so
+-- it still means something after a relog. Mixing the two was what let a
+-- 25-minute spread count as a one-minute burst.
+function PvP:CheckAchievements(gameNow)
+  local s = self:Store()
+  if not s then return end
+  gameNow = gameNow or (GetTime and GetTime()) or 0
+  local stamp = (time and time()) or 0
+  for _, a in ipairs(self.ACHIEVEMENTS) do
+    if not s.achievements[a.id] then
+      local ok, got = pcall(a.check, s, self, gameNow)
+      if ok and got then
+        s.achievements[a.id] = stamp
+        LP:Print(string.format("|cffe5cc80Achievement:|r |cffffd100%s|r -- %s",
+          a.name, a.blurb))
+        LP:Fire("PVP_ACHIEVEMENT", a.id, a.name)
+      end
+    end
+  end
+end
+
+function PvP:EarnedAchievements()
+  local s = self:Store()
+  if not s then return {} end
+  local out = {}
+  for _, a in ipairs(self.ACHIEVEMENTS) do
+    out[#out + 1] = {
+      id = a.id, name = a.name, blurb = a.blurb,
+      earned = s.achievements[a.id],
+    }
+  end
+  return out
+end
+
+function PvP:AchievementCount()
+  local s = self:Store()
+  if not s then return 0, #self.ACHIEVEMENTS end
+  local n = 0
+  for _ in pairs(s.achievements or {}) do n = n + 1 end
+  return n, #self.ACHIEVEMENTS
 end
 
 -- Top N nemeses, most kills first.
@@ -321,6 +544,10 @@ function PvP:Payload()
   for _, e in ipairs(self:TopNemesis(3)) do
     nem[#nem + 1] = { name = e.name, count = e.count }
   end
+  local earned = {}
+  for id, at in pairs(s.achievements or {}) do earned[#earned + 1] = id end
+  table.sort(earned)
+
   return {
     bracket = self:Bracket(),
     itemLevel = s.itemLevel,
@@ -330,6 +557,13 @@ function PvP:Payload()
     weekStart = s.weekStart,
     lifetimeKills = s.lifetime,
     deaths = s.deaths,
+    -- Observed kills, as distinct from the server's lifetime honorable-kill
+    -- counter: this is what we actually watched happen, and it is what the
+    -- streaks and achievements are built from.
+    kills = s.kills,
+    streak = s.streak,
+    bestStreak = s.bestStreak,
+    achievements = earned,
     nemesis = nem,
     -- So the board can label these honestly rather than implying precision.
     approx = { nemesis = true, weeklyKills = true, itemLevelExcludesHeirlooms = true },
@@ -376,6 +610,12 @@ function PvP:Enable()
                                   srcGUID, srcName, srcFlags,
                                   dstGUID, dstName, dstFlags)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+      -- Our own kills come through PARTY_KILL with us as the SOURCE. This is
+      -- the exact half: a real victim name, no guessing.
+      if subevent == "PARTY_KILL" and srcGUID == PvP.playerGUID then
+        PvP:NoteKill(dstGUID, dstName, dstFlags, GetTime and GetTime() or 0)
+        return
+      end
       if dstGUID ~= PvP.playerGUID then return end
       local now = GetTime and GetTime() or 0
       if subevent == "UNIT_DIED" then

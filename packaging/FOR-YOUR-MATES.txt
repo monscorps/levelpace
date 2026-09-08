@@ -1,0 +1,159 @@
+LevelPace — what to do
+======================
+
+Two downloads. One is a WoW addon, one is not. That trips everyone up, so:
+
+  LevelPace.zip              -> goes in your AddOns folder
+  LevelPace-Leaderboard.zip  -> goes ANYWHERE ELSE. Not AddOns. Desktop is fine.
+
+
+IF YOU JUST WANT THE ADDON
+--------------------------
+
+You do not need the second download at all. The addon on its own tracks your
+XP, tells you which quests are worth doing, and records your PvP kills,
+streaks and achievements. All of that works offline, forever, alone.
+
+  1. Unzip LevelPace.zip into:
+       C:\<your WoW folder>\Interface\AddOns\
+
+     You should end up with:
+       ...\Interface\AddOns\LevelPace\LevelPace.toc
+
+     If you see LevelPace\LevelPace\LevelPace.toc you went one folder too
+     deep. Move it up one.
+
+  2. Start WoW. At the character screen click AddOns and make sure LevelPace
+     is ticked. If it looks greyed out, tick "Load out of date AddOns".
+
+  3. In game type  /lp
+
+Useful commands:
+
+  /lp          settings (colours, fonts, layout, what to show)
+  /lp board    the leaderboard and your PvP record
+  /lp quests   which of your quests are worth doing right now
+  /lp reset    start this level's tracking over
+
+
+IF YOU WANT TO BE ON THE LEADERBOARD
+------------------------------------
+
+Two extra steps, then it looks after itself.
+
+  4. In game:  /lp  ->  Leaderboard  ->  tick "Share my levelling stats"
+     For the twink board and nemesis rankings, also tick "Also share PvP
+     stats". That one is separate on purpose: it includes the names of
+     players who killed you, and they never agreed to anything.
+
+  5. Log out, or type /reload.
+
+     This matters. WoW only writes its saved data when you log out or
+     reload -- never while you are playing. Nothing exists to send until
+     you do one of those.
+
+  6. Unzip LevelPace-Leaderboard.zip somewhere (Desktop is fine) and
+     double-click:
+
+       run-uploader.bat
+
+     Nothing to install. It uses the PowerShell that already comes with
+     Windows.
+
+Want to see exactly what gets sent before sending anything?
+  Double-click  run-uploader-dryrun.bat  -- it prints it and sends nothing.
+
+Do not want to remember step 6 every time?
+  Double-click  run-uploader-auto.bat  and leave the window open. It uploads
+  by itself whenever you finish playing. That file explains how to make it
+  start with Windows.
+
+
+SEEING THE RANKINGS
+-------------------
+
+  /lp board
+
+Three tabs:
+
+  Overall   who is levelling fastest, scored 0-100 like a WarcraftLogs parse
+  Twinks    kills this week, item level, streaks, k/d, your top nemesis
+  My PvP    your own record -- works even if you share nothing
+
+The board updates when the uploader runs AND you /reload. It tells you how
+old it is at the top right, so you always know whether you are looking at
+something current.
+
+
+WHAT GETS SENT, EXACTLY
+-----------------------
+
+Only if you ticked the box. Per completed level: the level, how long it took,
+XP by source, kills, quests, deaths, corpse-run time. Plus a display name and
+a random id.
+
+If you also ticked PvP: kills, deaths, item level, streaks, achievements, and
+your top three nemeses.
+
+Never sent: where you are, quest names, who you group with, chat, anything
+about your account, your email, your password. Nothing that could log into
+anything.
+
+Changed your mind? Untick the box -- the addon deletes its export
+immediately. To be removed from the board as well, ask whoever runs it.
+
+
+A FEW NUMBERS ARE BEST GUESSES, AND THE ADDON SAYS SO
+-----------------------------------------------------
+
+Not everything WoW 3.3.5a shows you is actually available to an addon. Where
+something had to be reconstructed, it is labelled rather than dressed up:
+
+  Kills and streaks     EXACT. The game tells your client when you kill
+                        someone, with their name.
+
+  Nemesis               A GUESS. Nothing tells you who killed YOU -- the
+                        game only tells the killer. So it blames whoever
+                        last hit you. It gets ganks and falls wrong.
+
+  Weekly kills          RECONSTRUCTED. There is no weekly counter in this
+                        version of WoW. It starts from zero when you install
+                        and counts up from there, so your first week looks
+                        low. That is honest, not broken.
+
+  Item level            Heirlooms are left out. The game reports them as
+                        item level 1, which would wreck the average.
+
+  Time to level         Counts everything -- deaths, corpse runs, standing
+                        about. It is meant to. If you go AFK it will TELL you
+                        the estimate includes a gap rather than quietly
+                        hiding it.
+
+
+ACHIEVEMENTS
+------------
+
+Fourteen, earned from real events, announced once in chat:
+
+  First Blood, Ten Count, Century            kills
+  On A Roll, Untouchable, Unstoppable        streaks of 5, 10, 25
+  Bloodbath                                  5 kills in a minute
+  Revenge                                    kill whoever killed you last
+  Nemesis Down                               kill someone who got you 3+ times
+  Even Score                                 draw level with a 5+ nemesis
+  Arch-Rival                                 10 kills each way with one player
+  Humbled                                    die to the same player 10 times
+  Well Rounded                               kill 10 different players
+  Kitted Out                                 item level 40 under level 20
+
+See them under  /lp board  ->  My PvP
+
+
+IF SOMETHING IS WRONG
+---------------------
+
+  /lp debug     prints the last 20 XP events it saw
+
+Tell whoever gave you this what you typed and what happened. Worth mentioning
+whether you were in a group or a raid at the time -- it changes what the game
+sends the addon.

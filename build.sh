@@ -7,6 +7,9 @@ cd "$(dirname "$0")"
 OUT=dist
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp -R LevelPace "$OUT/LevelPace"
+# The player-facing guide ships INSIDE the addon zip too, because that is the
+# download someone opens first.
+cp packaging/FOR-YOUR-MATES.txt "$OUT/LevelPace/READ-ME-FIRST.txt"
 cp README.md "$OUT/LevelPace/README.txt"
 # LF -> CRLF for every text file in the package
 find "$OUT/LevelPace" -type f \( -name '*.lua' -o -name '*.toc' -o -name '*.txt' \) -print0 |
@@ -27,6 +30,7 @@ cp -R server "$LB/server"
 cp -R uploader "$LB/uploader"
 cp server/README.md "$LB/README.md"
 cp packaging/START-HERE.txt "$LB/START-HERE.txt"
+cp packaging/FOR-YOUR-MATES.txt "$LB/FOR-YOUR-MATES.txt"
 cp packaging/*.bat "$LB/"
 cp packaging/*.command "$LB/" 2>/dev/null || true
 cp packaging/server.txt "$LB/server.txt"
@@ -38,7 +42,8 @@ find "$LB" -name '*.db' -delete
 find "$LB" -name '*.db-wal' -delete
 find "$LB" -name '*.db-shm' -delete
 # CRLF for the files a Windows user will actually open in Notepad
-for f in "$LB/START-HERE.txt" "$LB/README.md" "$LB/server.txt" "$LB"/*.bat; do
+for f in "$LB/START-HERE.txt" "$LB/FOR-YOUR-MATES.txt" "$LB/README.md" \
+         "$LB/server.txt" "$LB"/*.bat "$OUT/LevelPace/READ-ME-FIRST.txt"; do
   [ -f "$f" ] && perl -pi -e 's/\r?\n/\r\n/' "$f"
 done
 # NOTE: no cleanup of an old lower-case "LevelPace-leaderboard.zip" here --

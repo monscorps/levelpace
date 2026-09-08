@@ -8,7 +8,11 @@ local LP = {}
 _G.LevelPace = LP
 
 LP.ADDON_NAME = "LevelPace"
-LP.VERSION = "0.1.0"
+
+-- Single source of truth is the TOC, so a release bump touches one line.
+-- GetAddOnMetadata works on 3.3.5a; the fallback covers being loaded outside
+-- the game, as the test harness does.
+LP.VERSION = (GetAddOnMetadata and GetAddOnMetadata("LevelPace", "Version")) or "0.0.0"
 LP.modules = {}
 LP.debug = false
 
@@ -177,9 +181,47 @@ function LP:Bootstrap()
       if not LP.db then LP:InitDB() end
       LP:StartDriver()
       LP:Fire("PLAYER_READY")
-      LP:Print("loaded. /lp for options.")
+      LP:Print("loaded. /lp for options, /lp board for rankings.")
+      LP:CheckVersion()
     end
   end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Version check
+--
+-- The addon cannot reach the network, so it cannot ask GitHub anything. The
+-- uploader already fetches the board; it carries the current version along
+-- with it, and this compares. Costs one string comparison at login.
+--
+-- Deliberately a single chat line, once per session, with no popup and no
+-- nagging. An addon that interrupts you about its own version is worse than
+-- one that is slightly out of date.
+-- ---------------------------------------------------------------------------
+
+-- Returns true when `a` is a strictly newer dotted version than `b`.
+-- Compares numerically per segment, so 0.10.0 beats 0.9.0 -- string
+-- comparison would get that backwards.
+function LP:IsNewer(a, b)
+  if type(a) ~= "string" or type(b) ~= "string" then return false end
+  local ai, bi = {}, {}
+  for n in string.gmatch(a, "%d+") do ai[#ai + 1] = tonumber(n) end
+  for n in string.gmatch(b, "%d+") do bi[#bi + 1] = tonumber(n) end
+  for i = 1, math.max(#ai, #bi) do
+    local x, y = ai[i] or 0, bi[i] or 0
+    if x ~= y then return x > y end
+  end
+  return false
+end
+
+function LP:CheckVersion()
+  local board = _G.LevelPaceBoard
+  local latest = type(board) == "table" and board.addonVersion or nil
+  if not latest then return end
+  if not self:IsNewer(latest, self.VERSION) then return end
+  self:Print(string.format(
+    "|cffe0a040version %s is available|r (you have %s) -- %s",
+    latest, self.VERSION, board.downloadUrl or "check where you got it"))
 end
 
 -- ---------------------------------------------------------------------------

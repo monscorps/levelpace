@@ -35,6 +35,7 @@ local CLASS_COLOR = {
 local TABS = {
   { key = "overall", label = "Overall" },
   { key = "twinks",  label = "Twinks" },
+  { key = "me",      label = "My PvP" },
 }
 
 function Board:Data()
@@ -161,8 +162,8 @@ function Board:RenderOverall(data)
 end
 
 function Board:RenderTwinks(data)
-  self.header:SetText(pad("#", 4) .. pad("player", 20) .. pad("brkt", 6)
-    .. pad("ilvl", 7) .. pad("wk", 6) .. pad("k/d", 7) .. "nemesis")
+  self.header:SetText(pad("#", 4) .. pad("player", 18) .. pad("brkt", 5)
+    .. pad("ilvl", 6) .. pad("wk", 5) .. pad("strk", 6) .. pad("k/d", 6) .. "nemesis")
   local list = data and data.twinks or {}
   for i = 1, ROWS do
     local e = list[i + (self.offset or 0)]
@@ -172,17 +173,77 @@ function Board:RenderTwinks(data)
         nem = string.format("|cffff8000%s|r x%d",
           e.nemesis[1].name or "?", e.nemesis[1].count or 0)
       end
+      -- Best streak in legendary orange: it is the stat people will actually
+      -- brag about, and it is one of the few here that is exactly measured.
+      local streak = e.bestStreak and e.bestStreak > 0
+        and string.format("|cffff8000%d|r", e.bestStreak) or "-"
       self.rows[i]:SetText(
         pad(e.rank, 4)
-        .. pad(classColored(e.name or "?", e.class), 20 + 10)
-        .. pad(e.bracket or "-", 6)
-        .. pad(e.ilvl and string.format("%.0f", e.ilvl) or "-", 7)
-        .. pad(e.weekly or 0, 6)
-        .. pad(e.kd and string.format("%.2f", e.kd) or "-", 7)
+        .. pad(classColored(e.name or "?", e.class), 18 + 10)
+        .. pad(e.bracket or "-", 5)
+        .. pad(e.ilvl and string.format("%.0f", e.ilvl) or "-", 6)
+        .. pad(e.weekly or 0, 5)
+        .. pad(streak, 6 + 10)
+        .. pad(e.kd and string.format("%.2f", e.kd) or "-", 6)
         .. nem)
     end
   end
   return #list
+end
+
+-- Your own PvP record. Unlike the other two tabs this needs no uploader and
+-- no server -- it is read straight out of your saved variables, so it works
+-- for someone who never shares anything.
+function Board:RenderMe()
+  self.header:SetText("")
+  for i = 1, ROWS do self.rows[i]:SetText("") end
+
+  local P = LP.PvP
+  if not P then
+    self.rows[1]:SetText("|cffe0a040PvP module not loaded.|r")
+    return 0
+  end
+  local s = P:Store() or {}
+  local earned, total = P:AchievementCount()
+
+  local function line(i, label, value)
+    self.rows[i]:SetText(pad(label, 22) .. tostring(value))
+  end
+
+  line(1, "Kills seen", s.kills or 0)
+  line(2, "Deaths to players", s.deaths or 0)
+  line(3, "Current streak",
+    (s.streak or 0) > 0 and string.format("|cff1eff00%d|r", s.streak) or "0")
+  line(4, "Best streak",
+    (s.bestStreak or 0) > 0 and string.format("|cffff8000%d|r", s.bestStreak) or "0")
+  line(5, "Item level",
+    s.itemLevel and string.format("%.1f%s", s.itemLevel,
+      (s.heirlooms or 0) > 0 and string.format("  (+%d heirlooms, excluded)", s.heirlooms) or "")
+      or "measuring...")
+  line(6, "Achievements", string.format("%d / %d", earned, total))
+
+  self.rows[7]:SetText("|cff8fd3ffNemesis|r")
+  local top = P:TopNemesis(3)
+  for i = 1, 3 do
+    local e = top[i]
+    self.rows[7 + i]:SetText(e
+      and string.format("   |cffff8000%s|r  killed you %dx", e.name or "?", e.count)
+      or "   -")
+  end
+
+  self.rows[11]:SetText("|cff8fd3ffRecent achievements|r")
+  local list = {}
+  for _, a in ipairs(P:EarnedAchievements()) do
+    if a.earned then list[#list + 1] = a end
+  end
+  table.sort(list, function(x, y) return (x.earned or 0) > (y.earned or 0) end)
+  for i = 1, 3 do
+    local a = list[i]
+    self.rows[11 + i]:SetText(a
+      and string.format("   |cffe5cc80%s|r  -- %s", a.name, a.blurb)
+      or "   -")
+  end
+  return earned
 end
 
 function Board:Update()
@@ -193,6 +254,16 @@ function Board:Update()
     -- No tab-selected texture without the Blizzard tab template, so the
     -- active tab is simply disabled -- unclickable and visibly different.
     if spec.key == self.view then self.tabs[i]:Disable() else self.tabs[i]:Enable() end
+  end
+
+  -- The personal tab reads saved variables, not the published board, so it
+  -- works before anything has ever been uploaded.
+  if self.view == "me" then
+    self:RenderMe()
+    self.stale:SetText("")
+    self.footer:SetText("Your own record, read from this character's saved data.\n"
+      .. "Kills and streaks are exact. Nemesis is a best guess -- see the README.")
+    return
   end
 
   if not data then

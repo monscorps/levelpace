@@ -225,6 +225,135 @@ h.run("a death is attributed once, not to every later death", function()
   h.eq(LP.PvP:TopNemesis(3)[1].count, 1, "the attacker is not blamed twice")
 end)
 
+-- ==== kills and streaks ====
+-- Our own kills are EXACT: PARTY_KILL fires for the killer with a real name.
+
+h.run("killing a player counts and starts a streak", function()
+  local LP = boot()
+  LP.PvP:NoteKill("0xVICTIM", "Sheepy", F_PLAYER, 100)
+  local s = LP.PvP:Store()
+  h.eq(s.kills, 1, "kill counted")
+  h.eq(s.streak, 1, "streak started")
+  h.eq(s.bestStreak, 1, "best matches")
+  h.eq(s.victims["0xVICTIM"].name, "Sheepy", "victim recorded")
+end)
+
+h.run("killing an NPC is not a PvP kill", function()
+  local LP = boot()
+  LP.PvP:NoteKill("0xMOB", "Ravenous Ghoul", F_NPC, 100)
+  h.eq(LP.PvP:Store().kills, 0, "mobs do not count")
+  h.eq(LP.PvP:Store().streak, 0, "no streak")
+end)
+
+h.run("dying ends the streak but not the best", function()
+  local LP = boot()
+  for i = 1, 6 do LP.PvP:NoteKill("0xV" .. i, "V" .. i, F_PLAYER, i * 10) end
+  h.eq(LP.PvP:Store().streak, 6, "six in a row")
+  LP.PvP:NoteDamage("0xENEMY", "Gankzor", F_PLAYER, 100)
+  LP.PvP:NoteDeath(101)
+  h.eq(LP.PvP:Store().streak, 0, "streak reset")
+  h.eq(LP.PvP:Store().bestStreak, 6, "best remembered")
+end)
+
+h.run("best streak survives a worse run", function()
+  local LP = boot()
+  for i = 1, 8 do LP.PvP:NoteKill("0xA" .. i, "A", F_PLAYER, i) end
+  LP.PvP:NoteDamage("0xE", "E", F_PLAYER, 50); LP.PvP:NoteDeath(51)
+  for i = 1, 2 do LP.PvP:NoteKill("0xB" .. i, "B", F_PLAYER, 60 + i) end
+  h.eq(LP.PvP:Store().streak, 2, "current is the new run")
+  h.eq(LP.PvP:Store().bestStreak, 8, "best is still the old one")
+end)
+
+-- ==== achievements ====
+
+h.run("first blood on the first kill", function()
+  local LP = boot()
+  h.eq(LP.PvP:Store().achievements.firstblood, nil, "not yet")
+  LP.PvP:NoteKill("0xV", "V", F_PLAYER, 10)
+  h.ok(LP.PvP:Store().achievements.firstblood, "earned")
+end)
+
+h.run("an achievement is earned once, not every time", function()
+  local LP = boot()
+  local said = 0
+  local realPrint = LP.Print
+  LP.Print = function() said = said + 1 end
+  for i = 1, 5 do LP.PvP:NoteKill("0xV" .. i, "V", F_PLAYER, i) end
+  LP.Print = realPrint
+  h.eq(LP.PvP:Store().achievements.firstblood ~= nil, true, "earned")
+  h.ok(said <= 3, "announced a handful of times, not once per kill (" .. said .. ")")
+end)
+
+h.run("streak achievements gate on the right numbers", function()
+  local LP = boot()
+  for i = 1, 4 do LP.PvP:NoteKill("0xV" .. i, "V", F_PLAYER, i) end
+  h.eq(LP.PvP:Store().achievements.streak5, nil, "four is not five")
+  LP.PvP:NoteKill("0xV5", "V", F_PLAYER, 5)
+  h.ok(LP.PvP:Store().achievements.streak5, "five earns it")
+  h.eq(LP.PvP:Store().achievements.streak10, nil, "but not ten")
+end)
+
+h.run("revenge requires killing the one who killed you", function()
+  local LP = boot()
+  LP.PvP:NoteDamage("0xGANK", "Gankzor", F_PLAYER, 10)
+  LP.PvP:NoteDeath(11)
+  LP.PvP:NoteKill("0xOTHER", "Someone", F_PLAYER, 20)
+  h.eq(LP.PvP:Store().achievements.revenge, nil, "killing someone else is not revenge")
+  LP.PvP:NoteKill("0xGANK", "Gankzor", F_PLAYER, 30)
+  h.ok(LP.PvP:Store().achievements.revenge, "killing THEM is")
+end)
+
+h.run("nemesis down needs a real nemesis", function()
+  local LP = boot()
+  for i = 1, 3 do
+    LP.PvP:NoteDamage("0xGANK", "Gankzor", F_PLAYER, i * 10)
+    LP.PvP:NoteDeath(i * 10 + 1)
+  end
+  LP.PvP:NoteKill("0xGANK", "Gankzor", F_PLAYER, 100)
+  h.ok(LP.PvP:Store().achievements.nemesisdown, "three deaths to them makes it count")
+end)
+
+h.run("bloodbath needs the kills close together", function()
+  local LP = boot()
+  for i = 1, 5 do LP.PvP:NoteKill("0xV" .. i, "V", F_PLAYER, i * 300) end
+  h.eq(LP.PvP:Store().achievements.bloodbath, nil, "spread over 25 minutes is not a bloodbath")
+  local LP2 = boot()
+  for i = 1, 5 do LP2.PvP:NoteKill("0xW" .. i, "W", F_PLAYER, 1000 + i) end
+  h.ok(LP2.PvP:Store().achievements.bloodbath, "five inside a minute is")
+end)
+
+-- GetTime() restarts at zero every session. If kill timestamps were
+-- persisted, every one of them would be "in the future" after a relog and
+-- would count as having just happened -- a free Bloodbath on every login.
+h.run("burst timestamps do not survive a session, and future ones are ignored", function()
+  local LP = boot()
+  for i = 1, 5 do LP.PvP:NoteKill("0xV" .. i, "V", F_PLAYER, 5000 + i) end
+  h.ok(LP.PvP:Store().achievements.bloodbath, "earned in-session")
+  h.eq(LP.PvP:Store().recentKills, nil, "timestamps are NOT persisted")
+
+  -- Simulate a relog: fresh addon, saved data intact, clock back to zero.
+  local LP2 = boot()
+  LP2.PvP.recentKills = { 5000, 5001, 5002, 5003, 5004 }   -- stale, "future"
+  h.eq(LP2.PvP:KillsWithin(60, 0), 0, "future timestamps count for nothing")
+end)
+
+h.run("well rounded counts distinct victims, not kills", function()
+  local LP = boot()
+  for i = 1, 15 do LP.PvP:NoteKill("0xSAME", "Same", F_PLAYER, i) end
+  h.eq(LP.PvP:Store().achievements.wellrounded, nil, "15 kills on one player is not 10 players")
+  for i = 1, 10 do LP.PvP:NoteKill("0xD" .. i, "D" .. i, F_PLAYER, 100 + i) end
+  h.ok(LP.PvP:Store().achievements.wellrounded, "ten distinct victims is")
+end)
+
+h.run("achievement count", function()
+  local LP = boot()
+  local earned, total = LP.PvP:AchievementCount()
+  h.eq(earned, 0, "none yet")
+  h.ok(total >= 12, "a decent set to chase (" .. total .. ")")
+  LP.PvP:NoteKill("0xV", "V", F_PLAYER, 1)
+  h.ok(select(1, LP.PvP:AchievementCount()) >= 1, "counts up")
+end)
+
 -- ==== payload ====
 
 h.run("payload carries the fields the board needs", function()
@@ -245,6 +374,8 @@ h.run("payload carries the fields the board needs", function()
   h.eq(p.bracket, 19, "level 19 is the 19 bracket")
   h.eq(#p.nemesis, 1, "nemesis list")
   h.eq(p.nemesis[1].name, "Gankzor", "named")
+  h.eq(p.streak, 0, "streak was ended by the death")
+  h.ok(p.achievements, "achievement ids included")
   -- The board must be able to say these are guesses.
   h.eq(p.approx.nemesis, true, "nemesis flagged approximate")
   h.eq(p.approx.weeklyKills, true, "weekly flagged approximate")
