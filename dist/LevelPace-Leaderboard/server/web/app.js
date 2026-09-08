@@ -46,8 +46,30 @@
     return Math.floor(m / 60) + "h " + Math.round(m % 60) + "m";
   }
 
+  // Static mode: the same page is served two ways.
+  //
+  //   live   -- by levelpace_server.py, which answers /api/* directly
+  //   Pages  -- as flat files, where there is no server to answer anything
+  //
+  // The publisher injects window.LEVELPACE_STATIC and writes the same
+  // responses out as .json files, so the only thing that changes is how a
+  // path is resolved. A query string becomes part of the filename, because
+  // GitHub Pages cannot vary a response on one.
+  var STATIC = (typeof window !== "undefined" && window.LEVELPACE_STATIC === true);
+
+  function resolve(path) {
+    if (!STATIC) return path;
+    var q = path.indexOf("?");
+    var base = q === -1 ? path : path.slice(0, q);
+    var query = q === -1 ? "" : path.slice(q + 1);
+    var name = base.replace(/^\/api\//, "");
+    var m = /(?:^|&)level=(\d+)/.exec(query);
+    if (m) name = "level-" + m[1];
+    return "api/" + name + ".json";
+  }
+
   function api(path) {
-    return fetch(path, { headers: { "Accept": "application/json" } })
+    return fetch(resolve(path), { headers: { "Accept": "application/json" } })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -254,6 +276,7 @@
       document.getElementById("v-players").textContent = fmt(s.players);
       document.getElementById("v-levels").textContent = fmt(s.levels);
       document.getElementById("v-pvp").textContent = fmt(s.pvp);
+      showSnapshotAge(s.published);
     }).catch(function () {});
   }
 
@@ -297,10 +320,27 @@
   function failed(err) {
     boardEl.innerHTML = "";
     boardEl.appendChild(empty(
-      "Could not reach the server.",
+      STATIC ? "That board has not been published yet." : "Could not reach the server.",
       ["<code>" + String(err.message || err) + "</code>",
-       "Is <code>levelpace_server.py</code> running?"]
+       STATIC
+         ? "This is a published snapshot. Whoever hosts it needs to run the publish step again."
+         : "Is <code>levelpace_server.py</code> running?"]
     ));
+  }
+
+  // A published snapshot is a point in time, and saying so is the difference
+  // between "quiet week" and "nobody has updated this since March".
+  function showSnapshotAge(fetched) {
+    if (!STATIC || !fetched) return;
+    var el2 = document.getElementById("snapshot");
+    if (!el2) return;
+    var mins = Math.max(0, (Date.now() / 1000 - fetched) / 60);
+    var txt;
+    if (mins < 90) txt = Math.round(mins) + " min ago";
+    else if (mins < 60 * 48) txt = Math.round(mins / 60) + " hours ago";
+    else txt = Math.round(mins / 1440) + " days ago";
+    el2.textContent = "snapshot published " + txt;
+    el2.hidden = false;
   }
 
   // ---- wiring --------------------------------------------------------------

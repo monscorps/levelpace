@@ -22,14 +22,17 @@ DB="${LEVELPACE_DB:-server/levelpace.db}"
 OUT="docs"
 BASE_URL="${LEVELPACE_PAGES_URL:-}"
 
+# A missing database is NOT an error. Publishing an empty board is the right
+# first move: it proves the whole path works -- publish, commit, push, Pages --
+# before anyone has submitted anything, and the board renders an honest
+# "nobody has posted a level yet" rather than looking broken.
 if [ ! -f "$DB" ]; then
   echo
-  echo "  No database at $DB"
-  echo "  Nothing has been submitted yet, or the server is using another path."
-  echo "  Set LEVELPACE_DB to point at it."
+  echo "  No database at $DB yet, so this will publish an EMPTY board."
+  echo "  That is worth doing: it gets GitHub Pages working end to end before"
+  echo "  anyone submits. It fills in on the next publish after a real upload."
   echo
-  read -r -p "Press return to close." _
-  exit 1
+  mkdir -p "$(dirname "$DB")"
 fi
 
 echo

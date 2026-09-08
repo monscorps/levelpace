@@ -7,7 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/app.css">
+<!-- Relative, not absolute: GitHub Pages may serve this from /<repo>/ rather
+     than the domain root, and /app.css would 404 there. -->
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 
@@ -34,6 +36,7 @@
   <button role="tab" class="tab" data-view="level" aria-selected="false">By level</button>
   <button role="tab" class="tab" data-view="twink" aria-selected="false">Twinks</button>
   <div class="tab-tools">
+    <span class="snapshot" id="snapshot" hidden></span>
     <label class="lvlpick" id="lvlpick" hidden>
       <span>level</span>
       <select id="level-select"></select>
@@ -79,6 +82,6 @@
   <p>LevelPace · levels per hour, not XP per hour — so a level 20 and a level 78 are compared fairly.</p>
 </footer>
 
-<script src="/app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
