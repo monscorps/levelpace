@@ -28,12 +28,17 @@ cp -R uploader "$LB/uploader"
 cp server/README.md "$LB/README.md"
 cp packaging/START-HERE.txt "$LB/START-HERE.txt"
 cp packaging/*.bat "$LB/"
+cp packaging/*.command "$LB/" 2>/dev/null || true
+cp packaging/server.txt "$LB/server.txt"
+mkdir -p "$LB/inbox"
+printf 'Drop a friend LevelPace.lua here (subfolders are fine), then run\nimport-inbox.command, or:\n\n  python3 server/levelpace_server.py --db levelpace.db --import inbox\n' > "$LB/inbox/PUT-FILES-HERE.txt"
+chmod +x "$LB"/*.command 2>/dev/null || true
 rm -rf "$LB"/server/__pycache__ "$LB"/uploader/__pycache__
 find "$LB" -name '*.db' -delete
 find "$LB" -name '*.db-wal' -delete
 find "$LB" -name '*.db-shm' -delete
 # CRLF for the files a Windows user will actually open in Notepad
-for f in "$LB/START-HERE.txt" "$LB/README.md" "$LB"/*.bat; do
+for f in "$LB/START-HERE.txt" "$LB/README.md" "$LB/server.txt" "$LB"/*.bat; do
   [ -f "$f" ] && perl -pi -e 's/\r?\n/\r\n/' "$f"
 done
 # NOTE: no cleanup of an old lower-case "LevelPace-leaderboard.zip" here --

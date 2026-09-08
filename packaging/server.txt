@@ -1,0 +1,6 @@
+# Put the server address here. The uploader reads this so nobody has to type it.
+# Examples:
+#   http://localhost:8080
+#   http://100.101.102.103:8080        (Tailscale)
+#   https://levelpace.example.com
+http://localhost:8080

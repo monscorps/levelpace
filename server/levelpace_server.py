@@ -24,6 +24,7 @@ the merely dishonest. This is a friendly scoreboard, not an audited ranking.
 
 import argparse
 import json
+import sys
 import math
 import re
 import sqlite3
@@ -514,6 +515,72 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def import_files(store, paths):
+    """Ingest SavedVariables files directly, no uploader involved.
+
+    This is the zero-friction path for a small group: a friend sends you their
+    LevelPace.lua however you normally talk, you drop it in and run this. They
+    install nothing but the addon.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "uploader"))
+    try:
+        import levelpace_upload as up
+    except ImportError:
+        print("could not find uploader/levelpace_upload.py (it holds the Lua parser)")
+        return 1
+
+    total_files = total_levels = total_chars = 0
+    for pattern in paths:
+        matches = sorted(Path().glob(pattern)) if any(c in pattern for c in "*?[") \
+            else [Path(pattern)]
+        if not matches:
+            print("  ! no file matched %s" % pattern)
+        for f in matches:
+            if f.is_dir():
+                matches_in = sorted(f.rglob("LevelPace.lua"))
+                if not matches_in:
+                    print("  ! no LevelPace.lua under %s" % f)
+                for g in matches_in:
+                    total_files += 1
+                    c, l = _import_one(store, up, g)
+                    total_chars += c
+                    total_levels += l
+                continue
+            total_files += 1
+            c, l = _import_one(store, up, f)
+            total_chars += c
+            total_levels += l
+
+    print("\nimported %d file(s): %d character(s), %d level(s)"
+          % (total_files, total_chars, total_levels))
+    if total_chars == 0:
+        print("Nothing was found. The most likely reason is that sharing was "
+              "never switched on in the addon, so it wrote no export table.")
+    return 0
+
+
+def _import_one(store, up, path):
+    try:
+        blobs = up.extract_blobs(path)
+    except Exception as e:
+        print("  ! %s: %s" % (path, e))
+        return 0, 0
+    if not blobs:
+        print("  - %s: no shared data (sharing off?)" % path.name)
+        return 0, 0
+    levels = 0
+    for b in blobs:
+        try:
+            a, r = store.submit(b, "import")
+            levels += a
+            print("  + %s: %s (%d level%s%s)" % (
+                path.name, b.get("display"), a, "" if a == 1 else "s",
+                ", %d rejected" % r if r else ""))
+        except Exception as e:
+            print("  ! %s: %s" % (path.name, e))
+    return len(blobs), levels
+
+
 def main():
     ap = argparse.ArgumentParser(description="LevelPace leaderboard server")
     ap.add_argument("--port", type=int, default=8080)
@@ -521,7 +588,13 @@ def main():
     ap.add_argument("--db", default="levelpace.db")
     ap.add_argument("--web", default=str(Path(__file__).parent / "web"))
     ap.add_argument("--rate", type=int, default=20, help="requests per minute per source")
+    ap.add_argument("--import", dest="import_paths", nargs="+", metavar="PATH",
+                    help="ingest SavedVariables file(s) or folder(s) directly, "
+                         "then exit -- for data a friend sent you")
     args = ap.parse_args()
+
+    if args.import_paths:
+        return import_files(Store(args.db), args.import_paths)
 
     Handler.store = Store(args.db)
     Handler.limiter = RateLimiter(args.rate)
@@ -537,4 +610,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

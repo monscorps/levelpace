@@ -32,8 +32,26 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 UA = "LevelPaceUploader/" + VERSION
+
+
+def configured_server():
+    """Read the server address from server.txt beside this script.
+
+    This exists so the person you hand the uploader to never has to edit a
+    file or type a URL: you set it once, they double-click.
+    """
+    for name in ("server.txt", "SERVER.txt"):
+        f = Path(__file__).resolve().parent / name
+        if not f.is_file():
+            f = Path(__file__).resolve().parent.parent / name
+        if f.is_file():
+            for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    return line
+    return None
 
 
 # =============================================================================
@@ -404,8 +422,9 @@ def run_once(args):
 def main():
     ap = argparse.ArgumentParser(
         description="Upload LevelPace stats and fetch the global baseline.")
-    ap.add_argument("--server", default="http://localhost:8080",
-                    help="leaderboard server base URL")
+    ap.add_argument("--server", default=None,
+                    help="leaderboard server base URL "
+                         "(defaults to server.txt, else http://localhost:8080)")
     ap.add_argument("--wow", help="WoW install folder (auto-detected if omitted)")
     ap.add_argument("--file", help="path to LevelPace.lua SavedVariables")
     ap.add_argument("--addon", help="path to Interface/AddOns/LevelPace")
@@ -419,6 +438,8 @@ def main():
     ap.add_argument("--forget", metavar="ID",
                     help="ask the server to delete everything for this client id")
     args = ap.parse_args()
+    if not args.server:
+        args.server = configured_server() or "http://localhost:8080"
 
     if args.forget:
         try:

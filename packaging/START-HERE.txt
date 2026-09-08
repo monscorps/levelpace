@@ -38,6 +38,28 @@ Both programs need Python 3.8 or newer. Get it from python.org.
 Check it worked: open Command Prompt and type   python --version
 
 
+GETTING A FRIEND ONTO THE BOARD
+-------------------------------
+
+They need the ADDON. There is no way round that -- nothing else measures how
+long a level took, not even the game server, so the data does not exist until
+their client records it.
+
+Beyond the addon, pick whichever suits you:
+
+  EASIEST FOR THEM -- they install nothing else.
+    They send you this file, however you normally send files:
+      <their WoW>\WTF\Account\<ACCOUNT>\SavedVariables\LevelPace.lua
+    You drop it in the "inbox" folder and run import-inbox (Mac) or
+      python3 server/levelpace_server.py --db levelpace.db --import inbox
+    Their entry appears on the board. Repeat whenever they want to update.
+
+  AUTOMATIC -- they run the uploader themselves.
+    Put your server address in server.txt, hand them the whole folder, and
+    they double-click run-uploader. They never type or edit anything.
+    This needs your server to be reachable from their PC -- see below.
+
+
 TRY IT ON YOUR OWN PC FIRST
 ---------------------------
 
@@ -62,11 +84,29 @@ logout or /reload -- never while you are playing -- so the uploader has
 nothing to send until you do one of those.
 
 
-TO PUT IT ON THE INTERNET
--------------------------
+LETTING A FRIEND REACH YOUR MACHINE
+-----------------------------------
 
-run-server.bat is for testing on your own machine. For a real public board
-you want it on a host with a domain and HTTPS. See README.md.
+Only needed if they run the uploader themselves. If they just send you their
+file, skip this entirely -- nothing has to be reachable.
+
+  SAME HOUSE / SAME NETWORK
+    Use the LAN address the server prints on startup, e.g. http://192.168.1.20:8080
+    Nothing to configure.
+
+  DIFFERENT HOUSES -- easiest and safest is Tailscale (tailscale.com).
+    Both install it, both sign in. Your machine gets a stable address that
+    only your devices can reach. No port forwarding, no domain, nothing
+    exposed to the internet. Put that address in server.txt.
+
+  A REAL PUBLIC BOARD
+    You want it on a host with a domain and HTTPS rather than on your desktop.
+    See README.md. Do not port-forward this server straight to the internet:
+    it speaks plain HTTP and has only crude rate limiting.
+
+Whichever you choose, YOUR MACHINE MUST BE ON AND AWAKE for an upload to
+land. If it is asleep the uploader simply fails and tries again next time --
+nothing is lost, it just does not update until you are back.
 
 Please read the "Data, honestly" section of README.md before you invite other
 people. Two things matter: every number is supplied by the player's own
