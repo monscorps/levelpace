@@ -62,6 +62,7 @@ local function stubFrame(name)
     "SetResizable", "SetShadowOffset", "SetShadowColor", "SetOrientation",
     "SetChecked", "SetValueStep", "SetObeyStepOnDrag", "SetHitRectInsets",
     "SetAutoFocus", "ClearFocus", "SetFocus", "HighlightText", "SetMaxLetters",
+    "EnableMouseWheel", "Disable", "Enable", "SetNormalTexture", "SetHighlightTexture",
   } do
     f[m] = f[m] or noop
   end

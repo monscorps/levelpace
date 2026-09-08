@@ -1,0 +1,17 @@
+# Copy to ~/.cloudflared/config.yml and fill in the two placeholders.
+#
+# `cloudflared tunnel create levelpace` prints the UUID and writes the
+# credentials file. `cloudflared tunnel route dns levelpace <hostname>` points
+# your domain at it.
+
+tunnel: REPLACE-WITH-YOUR-TUNNEL-UUID
+credentials-file: /Users/YOURNAME/.cloudflared/REPLACE-WITH-YOUR-TUNNEL-UUID.json
+
+ingress:
+  - hostname: levelpace.yourdomain.com
+    service: http://localhost:8080
+
+  # Required catch-all: cloudflared refuses to start without a final rule that
+  # has no hostname. Anything not matching above gets a 404 rather than being
+  # quietly forwarded somewhere.
+  - service: http_status:404

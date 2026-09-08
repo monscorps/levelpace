@@ -207,6 +207,8 @@ local function dispatch(input)
     LP.db.profile.locked = (cmd == "lock")
     LP:Fire("LOCK_CHANGED", LP.db.profile.locked)
     LP:Print(cmd == "lock" and "frames locked." or "frames unlocked -- drag to move.")
+  elseif cmd == "board" or cmd == "rank" or cmd == "ranks" then
+    if LP.Board then LP.Board:Toggle() else LP:Print("board module not loaded") end
   elseif cmd == "share" then
     if not LP.Export then LP:Print("export module not loaded") return end
     LP:Print(LP.Export:Summary())
@@ -224,7 +226,7 @@ local function dispatch(input)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
   else
-    LP:Print("commands: reset, quests, share, lock, unlock, show, hide, debug")
+    LP:Print("commands: board, reset, quests, share, lock, unlock, show, hide, debug")
   end
   LP.lastCommand = cmd
 end

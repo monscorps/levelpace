@@ -1,0 +1,21 @@
+-- LevelPace :: Board (generated)
+--
+-- OVERWRITTEN by the LevelPace uploader. Do not hand-edit.
+--
+-- The addon cannot make network requests, so it cannot fetch the rankings
+-- itself. The uploader downloads them and rewrites this file; the client
+-- loads it from the TOC on the next /reload. Same mechanism as Baseline.lua.
+--
+-- Shape:
+--   LevelPaceBoard = {
+--     fetched = <unix seconds>,
+--     source  = "<server url>",
+--     overall = { { rank, name, realm, class, level, parse, levels, best }, ... },
+--     twinks  = { { rank, name, realm, class, bracket, ilvl, weekly,
+--                   lifetime, deaths, kd, nemesis = {{name, count}, ...} }, ... },
+--   }
+--
+-- Absent means "no board yet", and /lp board says so rather than showing an
+-- empty table as though nobody had ranked.
+
+LevelPaceBoard = nil

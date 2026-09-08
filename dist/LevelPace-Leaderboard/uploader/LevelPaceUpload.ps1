@@ -27,6 +27,9 @@ param(
     # but pointing it at a GitHub Pages URL means the baseline still arrives
     # when the upload server is off -- Pages is static and always up.
     [string]$BaselineUrl,
+    # Shared submission secret, if the board requires one. Normally read from
+    # the second line of server.txt rather than typed.
+    [string]$Token,
     [string]$WowPath,
     [string]$File,
     [string]$AddonPath,
@@ -48,17 +51,34 @@ try {
         [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 } catch { }
 
-function Get-ConfiguredServer {
+# server.txt holds the address on the first non-comment line, and optionally
+# a submission token on the second. One file to edit before handing the folder
+# out; the recipient never touches it.
+function Get-ConfiguredLines {
     foreach ($dir in @($Root, (Split-Path -Parent $Root))) {
         $f = Join-Path $dir 'server.txt'
         if (Test-Path $f) {
+            $vals = @()
             foreach ($line in (Get-Content $f)) {
                 $t = $line.Trim()
-                if ($t -and -not $t.StartsWith('#')) { return $t }
+                if ($t -and -not $t.StartsWith('#')) { $vals += $t }
             }
+            if ($vals.Count) { return $vals }
         }
     }
+    return @()
+}
+
+function Get-ConfiguredServer {
+    $v = Get-ConfiguredLines
+    if ($v.Count -ge 1) { return $v[0] }
     return 'http://localhost:8080'
+}
+
+function Get-ConfiguredToken {
+    $v = Get-ConfiguredLines
+    if ($v.Count -ge 2) { return $v[1] }
+    return $null
 }
 
 function Find-WowRoots {
@@ -197,6 +217,73 @@ function Write-Baseline([string]$addonDir, $baseline, [string]$source) {
     return $target
 }
 
+<#
+    Write the rankings into the addon folder as Lua, so the board can be read
+    in game without opening a browser. Same mechanism as Baseline.lua: the
+    addon cannot fetch, so we fetch and it loads the file on next /reload.
+#>
+function Write-Board([string]$addonDir, $overall, $twinks, [string]$source) {
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+
+    function LuaStr($s) {
+        if ($null -eq $s) { return 'nil' }
+        # Escape backslash first, then quote, or the escapes escape each other.
+        $t = ([string]$s) -replace '\\', '\\' -replace '"', '\"'
+        $t = $t -replace "`r", '' -replace "`n", ' '
+        return '"' + $t + '"'
+    }
+    function LuaNum($n) {
+        if ($null -eq $n -or $n -eq '') { return 'nil' }
+        return ([double]$n).ToString('0.####', $inv)
+    }
+
+    $lines = New-Object Collections.Generic.List[string]
+    $lines.Add('-- LevelPace :: Board (generated)')
+    $lines.Add('--')
+    $lines.Add('-- WRITTEN BY THE LEVELPACE UPLOADER. Do not hand-edit.')
+    $lines.Add(('-- Fetched {0} from {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $source))
+    $lines.Add('')
+    $epoch = [int]((Get-Date).ToUniversalTime() - (Get-Date '1970-01-01 00:00:00')).TotalSeconds
+    $lines.Add('LevelPaceBoard = {')
+    $lines.Add(('  fetched = {0},' -f $epoch))
+    $lines.Add(('  source = {0},' -f (LuaStr $source)))
+
+    $lines.Add('  overall = {')
+    foreach ($e in @($overall) | Select-Object -First 100) {
+        $lines.Add(('    { rank=%RANK%, name=%NAME%, realm=%REALM%, class=%CLASS%, level=%LVL%, parse=%PARSE%, levels=%N%, best=%BEST% },' `
+            -replace '%RANK%', (LuaNum $e.rank) -replace '%NAME%', (LuaStr $e.display) `
+            -replace '%REALM%', (LuaStr $e.realm) -replace '%CLASS%', (LuaStr $e.class) `
+            -replace '%LVL%', (LuaNum $e.level) -replace '%PARSE%', (LuaNum $e.parse) `
+            -replace '%N%', (LuaNum $e.levels) -replace '%BEST%', (LuaNum $e.best)))
+    }
+    $lines.Add('  },')
+
+    $lines.Add('  twinks = {')
+    foreach ($e in @($twinks) | Select-Object -First 100) {
+        $nem = @()
+        foreach ($n in @($e.nemesis) | Select-Object -First 3) {
+            if ($n) { $nem += ('{ name=' + (LuaStr $n.name) + ', count=' + (LuaNum $n.count) + ' }') }
+        }
+        $lines.Add(('    { rank=%RANK%, name=%NAME%, realm=%REALM%, class=%CLASS%, bracket=%BR%, ilvl=%ILVL%, weekly=%WK%, lifetime=%LT%, deaths=%D%, kd=%KD%, nemesis={%NEM%} },' `
+            -replace '%RANK%', (LuaNum $e.rank) -replace '%NAME%', (LuaStr $e.display) `
+            -replace '%REALM%', (LuaStr $e.realm) -replace '%CLASS%', (LuaStr $e.class) `
+            -replace '%BR%', (LuaNum $e.bracket) -replace '%ILVL%', (LuaNum $e.item_level) `
+            -replace '%WK%', (LuaNum $e.weekly_kills) -replace '%LT%', (LuaNum $e.lifetime_kills) `
+            -replace '%D%', (LuaNum $e.deaths) -replace '%KD%', (LuaNum $e.kd) `
+            -replace '%NEM%', ($nem -join ',')))
+    }
+    $lines.Add('  },')
+    $lines.Add('}')
+    $lines.Add('')
+
+    $target = Join-Path $addonDir 'Board.lua'
+    $tmp = "$target.tmp"
+    $enc = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($tmp, ($lines -join "`r`n"), $enc)
+    Move-Item -LiteralPath $tmp -Destination $target -Force
+    return $target
+}
+
 function Invoke-Once {
     $files = Find-SavedVariables
     if (-not $files -or $files.Count -eq 0) {
@@ -239,9 +326,12 @@ function Invoke-Once {
     else {
         # Each payload is already a JSON array of characters; merge them.
         $merged = '[' + (($payloads | ForEach-Object { $_.Trim().TrimStart('[').TrimEnd(']') }) -join ',') + ']'
+        $headers = @{}
+        if ($Token) { $headers['X-LevelPace-Token'] = $Token }
         try {
             $res = Invoke-RestMethod -Uri ($Server.TrimEnd('/') + '/api/submit') `
                 -Method Post -Body $merged -ContentType 'application/json' `
+                -Headers $headers `
                 -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 30
             Write-Host ("  uploaded: {0} level(s) accepted, {1} rejected" -f $res.levels, $res.rejected) -ForegroundColor Green
             foreach ($e in $res.errors) { Write-Host ("  ! server: {0}" -f $e) -ForegroundColor Red }
@@ -265,16 +355,35 @@ function Invoke-Once {
             -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 30
         $out = Write-Baseline $addon $base $Server
         Write-Host ("  baseline written: {0} ({1} players)" -f $out, $base.players) -ForegroundColor Green
-        Write-Host '  /reload in game to pick it up.'
     } catch {
         Write-Host ("  ! baseline fetch failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
     }
+
+    # The rankings themselves, so the board can be read in game.
+    try {
+        $root = if ($BaselineUrl) { ($BaselineUrl -replace '/api/baseline\.json$', '') } else { $Server.TrimEnd('/') }
+        $isStatic = $BaselineUrl -and ($BaselineUrl -match '\.json$')
+        $lbUrl = if ($isStatic) { "$root/api/leaderboard.json" } else { "$root/api/leaderboard" }
+        $twUrl = if ($isStatic) { "$root/api/twinks.json" }      else { "$root/api/twinks" }
+
+        $lb = Invoke-RestMethod -Uri $lbUrl -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 30
+        $tw = $null
+        try { $tw = Invoke-RestMethod -Uri $twUrl -UserAgent "LevelPaceUploader/$Version" -TimeoutSec 30 } catch { }
+
+        $out = Write-Board $addon $lb.entries ($(if ($tw) { $tw.entries } else { @() })) $root
+        Write-Host ("  board written: {0} ({1} ranked)" -f $out, @($lb.entries).Count) -ForegroundColor Green
+    } catch {
+        Write-Host ("  ! board fetch failed: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
+    }
+
+    Write-Host '  /reload in game, then /lp board'
     return 0
 }
 
 # ---- main -------------------------------------------------------------------
 
 if (-not $Server) { $Server = Get-ConfiguredServer }
+if (-not $Token)  { $Token  = Get-ConfiguredToken }
 
 if ($Forget) {
     try {

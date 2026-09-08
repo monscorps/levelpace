@@ -24,6 +24,7 @@ the merely dishonest. This is a friendly scoreboard, not an audited ranking.
 
 import argparse
 import json
+import os
 import sys
 import math
 import re
@@ -549,6 +550,7 @@ class Handler(BaseHTTPRequestHandler):
     store = None
     limiter = None
     webroot = None
+    token = None
 
     def log_message(self, fmt, *args):
         print("%s - %s" % (self.address_string(), fmt % args))
@@ -586,10 +588,36 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def _authorised(self):
+        """Shared-secret check on the write endpoints.
+
+        This is NOT a security boundary against a determined person -- the
+        token ships inside the folder you hand out, so anyone you invite has
+        it and can pass it to anyone else. What it does buy you, once the
+        server is on a public URL, is silence: scanners and drive-by bots that
+        find the endpoint get a 401 instead of writing rows into your board.
+
+        Optional. With no --token set, submission is open, which is fine on a
+        private network and unwise on a public one.
+        """
+        if not self.token:
+            return True
+        got = self.headers.get("X-LevelPace-Token") or ""
+        # Constant-time compare: not because a timing attack is plausible
+        # here, but because the alternative is a habit worth not forming.
+        if len(got) != len(self.token):
+            return False
+        diff = 0
+        for a, b in zip(got, self.token):
+            diff |= ord(a) ^ ord(b)
+        return diff == 0
+
     def do_POST(self):
         path = urlparse(self.path).path
         if not self.limiter.allow(self._source()):
             return self._err(429, "slow down")
+        if not self._authorised():
+            return self._err(401, "missing or wrong submission token")
         try:
             payload = self._body()
         except Exception as e:
@@ -808,6 +836,8 @@ def main():
                          "Pages, then exit (e.g. --publish docs)")
     ap.add_argument("--base-url", help="public URL of the published site, "
                                        "printed for convenience")
+    ap.add_argument("--token", help="require this shared secret on submissions "
+                                    "(also read from LEVELPACE_TOKEN)")
     args = ap.parse_args()
 
     if args.import_paths:
@@ -819,9 +849,15 @@ def main():
     Handler.store = Store(args.db)
     Handler.limiter = RateLimiter(args.rate)
     Handler.webroot = Path(args.web)
+    Handler.token = args.token or os.environ.get("LEVELPACE_TOKEN") or None
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     print("LevelPace server on http://%s:%d  (db=%s)" % (args.host, args.port, args.db))
+    if Handler.token:
+        print("Submission token required.")
+    else:
+        print("NO submission token set. Fine on a private network; on a public")
+        print("URL it means anyone who finds it can write to your board.")
     print("Every number served here is client-supplied and forgeable. Say so on the page.")
     try:
         srv.serve_forever()

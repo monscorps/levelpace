@@ -70,11 +70,47 @@ h.run("a full kill-to-projection round trip", function()
   h.eq(LP.History:Current().killCount, 12, "kills recorded")
 end)
 
+h.run("the in-game board opens with no data and says so", function()
+  for _, f in ipairs(tocFiles()) do h.load(f) end
+  local LP = _G.LevelPace
+  LP:InitDB(); LP:Fire("DB_READY"); LP:Fire("PLAYER_READY")
+  h.ok(LP.Board and LP.Board.frame, "board frame built")
+  h.eq(LP.Board:Data(), nil, "no board file yet")
+  h.ok(pcall(function() LP.Board:Toggle() end), "opens without erroring")
+  h.ok(LP.Board.rows[1].text and LP.Board.rows[1].text:find("No board data"),
+       "and explains why it is empty rather than showing a blank grid")
+end)
+
+h.run("the board renders a published snapshot", function()
+  for _, f in ipairs(tocFiles()) do h.load(f) end
+  local LP = _G.LevelPace
+  LP:InitDB(); LP:Fire("DB_READY"); LP:Fire("PLAYER_READY")
+  _G.LevelPaceBoard = {
+    fetched = 0,
+    overall = { { rank = 1, name = "Dan", class = "WARRIOR", level = 74,
+                  parse = 97, levels = 4, best = 100 } },
+    twinks = { { rank = 1, name = "Twinky", class = "ROGUE", bracket = 19,
+                 ilvl = 44.5, weekly = 180, kd = 11.4,
+                 nemesis = { { name = "Gankzor", count = 31 } } } },
+  }
+  LP.Board.view = "overall"
+  h.ok(pcall(function() LP.Board:Update() end), "overall renders")
+  h.ok(LP.Board.rows[1].text and LP.Board.rows[1].text:find("Dan", 1, true), "shows the player")
+  h.ok(LP.Board.rows[1].text:find("ff8000") or LP.Board.rows[1].text:find("|cff"),
+       "parse is colour-coded")
+  LP.Board.view = "twinks"
+  h.ok(pcall(function() LP.Board:Update() end), "twinks renders")
+  h.ok(LP.Board.rows[1].text and LP.Board.rows[1].text:find("Gankzor", 1, true), "shows the nemesis")
+  h.ok(LP.Board.footer.text and LP.Board.footer.text:find("approximate", 1, true),
+       "and labels the twink numbers as approximate")
+  _G.LevelPaceBoard = nil
+end)
+
 h.run("slash commands do not error", function()
   for _, f in ipairs(tocFiles()) do h.load(f) end
   local LP = _G.LevelPace
   LP:InitDB(); LP:Fire("DB_READY"); LP:Fire("PLAYER_READY")
-  for _, cmd in ipairs({ "", "reset", "quests", "lock", "unlock", "show", "hide", "help" }) do
+  for _, cmd in ipairs({ "", "board", "reset", "quests", "share", "lock", "unlock", "show", "hide", "help" }) do
     local ok, err = pcall(LP.Dispatch, cmd)
     h.ok(ok, "/lp " .. cmd .. (ok and "" or (" -- " .. tostring(err))))
   end
