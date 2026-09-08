@@ -1,99 +1,91 @@
-**LevelPace** — XP tracking, quest-vs-grind ranking, and PvP stats for WoW 3.3.5a.
+# LevelPace 0.5.0 — the bundle
 
----
+Three addons in one folder. One download, same as before.
 
-## Two things to do
+| Module | What it does | Switch it off with |
+|---|---|---|
+| **LevelPace** | XP pace, time to level, quests vs grinding | `/lp toggle levelpace` |
+| **Nemesis** | Battlegrounds: who joined, who keeps killing you, flags, streaks | `/lp toggle nemesis` |
+| **Rare Finder** | Logs every rare kill — yours and any you witness | `/lp toggle rarefinder` |
 
-### 1. The addon
+Each one is independent. Turn any off and the rest carry on.
 
-Download **`LevelPace.zip`** and unzip it into your WoW folder so you end up with:
-
-```
-...\Interface\AddOns\LevelPace\LevelPace.toc
-```
-
-If you see `AddOns\LevelPace\LevelPace\LevelPace.toc`, you went one folder too deep — move it up one.
-
-Start WoW, tick **LevelPace** in the AddOns list at the character screen (and **Load out of date AddOns** if it's greyed out), then type `/lp` in game.
-
-**That's the addon done.** Everything below works on its own from here — XP tracking, quest rankings, kill streaks, achievements. You never need anything else.
-
-### 2. The companion — only if you want to be on the leaderboard
-
-Download **`LevelPace-Leaderboard.zip`**, unzip it anywhere, and double-click:
+## New commands
 
 ```
-LevelPace Companion.bat
+/lp modules            what is installed and whether it is on
+/lp toggle <id>        switch one on or off
+/lp nemesis            your PvP record, nemeses, streaks
+/lp rares              your rare kill log
 ```
 
-That's the whole instruction. Nothing installs. No account, no sign-up.
+Everything you already used still works: `/lp`, `/lp board`, `/lp quests`,
+`/lp reset`, `/lp share`, `/lp lock`.
 
-An icon appears by your clock (possibly hidden under the `^` arrow). Leave it running — it uploads your stats by itself whenever you log out of WoW, and brings everyone else's rankings back into your addon.
+## Nemesis
 
-Right-click the icon for **Upload now**, **Open the web board**, **View log**, or **Quit**.
+- **Enemy joined / left** — read from the battleground scoreboard, which lists
+  both teams. Someone must be missing from two consecutive scans before they
+  count as having left, because scoreboards flicker.
+- **Arch nemesis alerts** — a nemesis is anyone who has killed you more often
+  than you have killed them. You are told when one is in your match, including
+  at the start. That is when it is most useful.
+- **Flag carrier announcements** — pickups, captures, returns and drops.
+- **Enemy guild names** — see the honest limitation below.
+- **Kills, deaths and killstreaks** — current and longest.
+- **Lifetime statistics** — honorable kills come from the server and are
+  genuinely lifetime. Win/loss is only what the addon has watched since you
+  installed it, and it says so rather than pretending to be your career record.
+- **Sound alerts** — per event, each independently switchable.
 
-To start it with Windows: `Win+R` → `shell:startup` → drop a shortcut to the .bat in there.
+## Rare Finder
 
-One thing to turn on first, once: `/lp` → **Leaderboard** → tick **Share my levelling stats**. Nothing leaves your machine until you do.
+- **420 rares** across vanilla, Burning Crusade and Wrath, identified by
+  creature id rather than by name, so it works regardless of client language.
+- **Kills by other people count too.** Anything dying in your combat log range
+  is logged, so standing near someone who drops the Time-Lost Proto Drake
+  records it.
+- **Custom server rares are learned automatically.** Target anything the server
+  calls rare and it is remembered from then on, flagged separately from the
+  shipped list.
 
----
+## Things that are honestly limited
 
-## What's new in this release
+Worth knowing before you wonder whether something is broken.
 
-**The companion is now a proper tray app, not a script you re-run.** One file, an icon by the clock, and it uploads by itself. Previously you had to remember to run it after every session.
+- **Enemy guilds are partial.** The client can only tell you the guild of a
+  player you have targeted or moused over — there is no way to look one up by
+  name on 3.3.5a. The addon shows "guilds known: 6 of 15" rather than leaving
+  blanks that look like nobody has a guild.
+- **Flag messages are English-only.** 3.3.5a ships no translatable strings for
+  flag events; the text comes from the server as ordinary chat. On a
+  non-English server, or one that reworded its battleground messages, flag
+  announcements will not fire.
+- **A match you leave early is not recorded.** The winner is only known when
+  the battleground ends.
+- **Win/loss is since-install**, not lifetime. Only honorable kills are
+  lifetime, because only those come from the server.
 
-**Kill streaks — and these are exact.** The game tells your client when you kill someone, with their name, so kills and streaks are measured rather than guessed. Current streak resets on death; best streak persists.
+## Under the hood
 
-**Fourteen achievements**, announced once in chat when earned. The good ones lean on the nemesis data:
+Rewritten around a module framework: one shared event router instead of each
+feature opening its own frame, which matters in a 40-player battleground where
+the combat log is the hottest path in the addon.
 
-- **Revenge** — kill whoever killed you last
-- **Nemesis Down** — kill someone who's got you 3+ times
-- **Even Score** — draw level with a nemesis who had you 5+ times
-- **Arch-Rival** — 10 kills each way with the same player
-- **Humbled** — die to the same player 10 times, because that deserves recognition too
+The test suite went from 12 files to 17, and from about 600 assertions to 891.
 
-**A "My PvP" tab** on `/lp board` — your kills, streaks, item level, top 3 nemeses and recent achievements. Reads your saved data directly, so it works for someone who shares nothing.
+## Fixed
 
----
+- **Grinding mobs inflated your PvP killstreak.** `PARTY_KILL` fires for every
+  kill including creatures, so an afternoon of levelling was writing mobs into
+  your battleground record. Found by running the addon rather than by a test.
+- "New best killstreak" fired on the first, second and third kill of a fresh
+  install. Now only from three.
+- An alert switched off still printed to chat; only the sound was muted.
 
-## Commands
+## Installing
 
-| | |
-|---|---|
-| `/lp` | Settings — colours, fonts, layout, what to show |
-| `/lp board` | Rankings and your PvP record |
-| `/lp quests` | Which of your quests are worth doing right now |
-| `/lp reset` | Start this level's tracking over |
-| `/lp debug` | Last 20 XP events, if something looks wrong |
+Unzip into `Interface\AddOns\`. You should end up with
+`Interface\AddOns\LevelPace\LevelPace.toc`.
 
----
-
-## Why it only updates when you log out
-
-WoW writes its saved data to disk on logout or `/reload` — **never while you're playing**. No addon can change that; there's no API for it.
-
-So the companion watches that file and uploads within a second or two of the game writing it. In practice: play, log out, and it's sent before you've finished looking at the character screen. The addon itself tracks everything live in game — this is only about getting it out.
-
-To see new rankings in game, `/reload` after the companion has run. The board tells you how old it is, so you always know what you're looking at.
-
----
-
-## Which numbers are exact, and which aren't
-
-Not everything WoW 3.3.5a shows you is available to an addon. Where something had to be reconstructed, it's labelled rather than dressed up:
-
-| | |
-|---|---|
-| **Kills and streaks** | **Exact.** The game tells your client when you kill someone, with their name. |
-| **Nemesis** | **A guess.** Nothing tells you who killed *you* — the game only tells the killer. So it blames whoever last hit you. It gets ganks and falls wrong. |
-| **Weekly kills** | **Reconstructed.** There's no weekly counter in this version of WoW. It starts at zero when you install, so your first week looks low. That's honest, not broken. |
-| **Item level** | Heirlooms are excluded — the game reports them as item level 1, which would wreck the average. |
-| **Time to level** | Counts everything: deaths, corpse runs, standing about. It's meant to. Go AFK and it *tells* you the estimate includes a gap rather than quietly hiding it. |
-
-## What gets sent, if you opt in
-
-Per completed level: the level, how long it took, XP by source, kills, quests, deaths, corpse-run time. Plus a display name and a random id. With PvP sharing on: kills, deaths, item level, streaks, achievements, and your top three nemeses.
-
-**Never sent:** where you are, quest names, who you group with, chat, or anything about your account.
-
-Untick the box and the addon deletes its export immediately.
+Type `/lp modules` once you are in game to check all three loaded.
