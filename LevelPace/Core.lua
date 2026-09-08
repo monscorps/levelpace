@@ -88,8 +88,59 @@ function LP:ModuleEnabled(id)
   return def.default and true or false
 end
 
--- Replaced by the real implementation in the event router below.
-function LP:UnregisterModuleEvents(_) end
+-- ---------------------------------------------------------------------------
+-- Shared WoW-event router
+--
+-- ONE frame for the whole addon. Frames are never garbage collected on
+-- 3.3.5a, and COMBAT_LOG_EVENT_UNFILTERED is the hottest path in the addon
+-- during a battleground -- three modules each registering their own handler
+-- for it would triple that cost for no gain.
+-- ---------------------------------------------------------------------------
+
+local eventOwners = {}     -- event -> array of { id = moduleID, fn = handler }
+
+local function ensureEventFrame()
+  if LP.eventFrame then return LP.eventFrame end
+  if not CreateFrame then return nil end
+  local f = CreateFrame("Frame", "LevelPaceEvents")
+  f:SetScript("OnEvent", function(_, event, ...)
+    local list = eventOwners[event]
+    if not list then return end
+    for i = 1, #list do
+      local ok, err = pcall(list[i].fn, ...)
+      if not ok and LP.debug then
+        LP:Print("|cffff5555" .. list[i].id .. " / " .. event .. ":|r " .. tostring(err))
+      end
+    end
+  end)
+  LP.eventFrame = f
+  return f
+end
+
+function LP:RegisterEvent(event, moduleID, fn)
+  local f = ensureEventFrame()
+  if not f then return false end
+  if not eventOwners[event] then
+    eventOwners[event] = {}
+    LP.util.SafeRegisterEvent(f, event)
+  end
+  table.insert(eventOwners[event], { id = moduleID, fn = fn })
+  return true
+end
+
+function LP:UnregisterModuleEvents(moduleID)
+  for event, list in pairs(eventOwners) do
+    for i = #list, 1, -1 do
+      if list[i].id == moduleID then table.remove(list, i) end
+    end
+    if #list == 0 then
+      eventOwners[event] = nil
+      if LP.eventFrame and LP.eventFrame.UnregisterEvent then
+        LP.eventFrame:UnregisterEvent(event)
+      end
+    end
+  end
+end
 
 function LP:SetModuleEnabled(id, on)
   local def = LP.modules[id]
