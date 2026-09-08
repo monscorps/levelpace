@@ -49,6 +49,46 @@ function LP:Print(...)
 end
 
 -- ---------------------------------------------------------------------------
+-- Module registry
+--
+-- LP.modules is keyed by id for lookup; moduleOrder preserves registration
+-- order so the dashboard tabs and the options tree do not reshuffle between
+-- sessions (pairs() order is undefined and would).
+-- ---------------------------------------------------------------------------
+
+local moduleOrder = {}
+
+function LP:RegisterModule(def)
+  if type(def) ~= "table" then error("module definition must be a table", 2) end
+  if type(def.id) ~= "string" or def.id == "" then error("module needs an id", 2) end
+  if LP.modules[def.id] then error("module already registered: " .. def.id, 2) end
+  if def.default == nil then def.default = true end
+  def.enabled = false          -- runtime state; the saved flag is separate
+  LP.modules[def.id] = def
+  moduleOrder[#moduleOrder + 1] = def.id
+  return def
+end
+
+function LP:GetModule(id)
+  return LP.modules[id]
+end
+
+function LP:ModuleOrder()
+  local out = {}
+  for i = 1, #moduleOrder do out[i] = moduleOrder[i] end
+  return out
+end
+
+function LP:ModuleEnabled(id)
+  local def = LP.modules[id]
+  if not def then return false end
+  local saved = LP.db and LP.db.profile and LP.db.profile.modules
+  local row = saved and saved[id]
+  if row and row.enabled ~= nil then return row.enabled and true or false end
+  return def.default and true or false
+end
+
+-- ---------------------------------------------------------------------------
 -- Scheduler
 --
 -- 3.3.5a has no C_Timer, and frames are never garbage collected, so every
@@ -143,6 +183,10 @@ LP.defaults = {
     },
     gapWarnSeconds = 600,
     countRestedInProjection = true,
+    -- Per-module enable state, keyed by module id. Absent means "use the
+    -- module's own default", which is how a module added in a later version
+    -- turns itself on for people who already have a saved profile.
+    modules = {},
   },
 }
 
