@@ -110,10 +110,27 @@ echo
 echo "  Leave this window open. Ctrl-C or close it to stop."
 echo
 
-# Re-publish periodically so new submissions reach the board, and so a
-# restarted tunnel's address gets out.
+# Re-publish periodically so new submissions reach the board.
+#
+# Quick tunnels drop -- Cloudflare gives no uptime promise on a free, anonymous
+# tunnel. If ours dies we must NOT keep running: the address published to Pages
+# would still point at it, and every companion would upload into a black hole.
+# So exit instead, and let whatever started us bring the whole thing back up
+# with a fresh tunnel and a freshly published address. Under launchd that is
+# automatic; run by hand it is a visible message rather than silent rot.
 while true; do
-  sleep 3600
+  # Wake often enough to notice a dead tunnel quickly, but only publish hourly.
+  for _ in $(seq 1 60); do
+    sleep 60
+    if ! kill -0 "$TUN" 2>/dev/null; then
+      echo
+      echo "  ! the tunnel dropped. The published address is now dead, so this"
+      echo "    script is exiting to be restarted with a new one."
+      echo "    (Under launchd that happens by itself within a few seconds.)"
+      cleanup
+    fi
+  done
+
   LEVELPACE_UPLOAD_URL="$URL" \
     python3 server/levelpace_server.py --db "$DB" --publish docs --base-url "$PAGES_URL" >/dev/null 2>&1
   if git rev-parse --git-dir >/dev/null 2>&1; then

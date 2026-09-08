@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Runs the LevelPace server as a background service so it survives closing
-    the terminal, logging out, and rebooting.
+    Runs the whole LevelPace service -- server, public tunnel, and board
+    publishing -- as a background job that survives closing the terminal,
+    logging out, and rebooting.
 
     Install:
       cp service/com.levelpace.server.plist ~/Library/LaunchAgents/
@@ -12,12 +13,16 @@
 
     Check it:
       launchctl list | grep levelpace
-      tail -f /tmp/levelpace-server.log
+      tail -f /tmp/levelpace-service.log
+
+    This runs run-everything.command rather than the server alone. Running only
+    the server would leave the public address unowned: quick tunnels change on
+    every restart, and the address has to be re-published to Pages when it does.
+    The script handles that, and exits when its tunnel dies so that KeepAlive
+    brings the whole set back up together with a fresh, published address.
 
     The token is read from the .token file rather than written here, so this
-    file carries no secret and could be committed without care. It is wired
-    through a tiny shell wrapper because launchd does not expand $(...) in
-    ProgramArguments.
+    file carries no secret and is safe to commit.
 -->
 <plist version="1.0">
 <dict>
@@ -26,24 +31,25 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>cd "$HOME/DAN WOW ADDON" &amp;&amp; LEVELPACE_TOKEN="$(cat .token 2>/dev/null)" exec /usr/bin/python3 server/levelpace_server.py --port 8080 --db server/levelpace.db</string>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd "$HOME/DAN WOW ADDON" &amp;&amp; exec ./run-everything.command</string>
     </array>
 
-    <!-- Start at login and restart if it ever exits. -->
+    <!-- Start at login, and restart whenever it exits -- including the
+         deliberate exit it performs when its tunnel drops. -->
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
 
-    <!-- Do not hammer the CPU if it is crash-looping on a bad config. -->
+    <!-- Do not hammer a crash loop: cloudflared missing, no .token, no network. -->
     <key>ThrottleInterval</key>
-    <integer>10</integer>
+    <integer>60</integer>
 
     <key>StandardOutPath</key>
-    <string>/tmp/levelpace-server.log</string>
+    <string>/tmp/levelpace-service.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/levelpace-server.log</string>
+    <string>/tmp/levelpace-service.log</string>
 </dict>
 </plist>
