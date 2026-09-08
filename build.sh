@@ -78,7 +78,7 @@ COMPANION="$LB/LevelPace Companion.bat"
   printf 'REM\r\n'
   printf 'REM  Nothing is installed. It uses the PowerShell already in Windows.\r\n'
   printf 'REM ==========================================================================\r\n'
-  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$s=[IO.File]::ReadAllText(\x27%%~f0\x27);iex ($s.Substring($s.IndexOf(\x27#PSSTART\x27)))"\r\n'
+  printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -Command "$s=[IO.File]::ReadAllText(\x27%%~f0\x27);iex ($s.Substring($s.IndexOf(\x27#PSSTART\x27)))"\r\n'
   printf 'exit /b\r\n'
   printf '#PSSTART\r\n'
   perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1

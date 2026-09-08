@@ -439,6 +439,50 @@ $miLog.Add_Click({
     else { [System.Windows.Forms.MessageBox]::Show('Nothing logged yet.', 'LevelPace') | Out-Null }
 })
 
+# Sending the log back is the ONLY way anyone finds out why this failed on a
+# machine none of us can see. "Open the folder under %LOCALAPPDATA% and attach
+# the file" is three steps too many for someone doing you a favour, so both
+# routes are one click.
+
+$miCopyLog = $menu.Items.Add('Copy log (for Discord)')
+$miCopyLog.Add_Click({
+    if (-not (Test-Path $LogPath)) {
+        [System.Windows.Forms.MessageBox]::Show('Nothing logged yet.', 'LevelPace') | Out-Null
+        return
+    }
+    try {
+        # Discord cuts a message off at 2000 characters, so send the tail --
+        # which is where the failure is anyway -- rather than a truncated head
+        # that stops before anything interesting happened.
+        $lines = Get-Content $LogPath -Tail 60
+        $text = ($lines -join "`r`n")
+        if ($text.Length -gt 1800) { $text = $text.Substring($text.Length - 1800) }
+        [System.Windows.Forms.Clipboard]::SetText("``````" + "`r`n" + $text + "`r`n" + "``````")
+        [System.Windows.Forms.MessageBox]::Show(
+            'Copied the last 60 lines. Paste it into Discord with Ctrl+V.',
+            'LevelPace') | Out-Null
+    } catch {
+        # Clipboard access needs an STA thread. The launcher asks for one, but
+        # if someone runs this script another way it can fail -- so point at
+        # the route that always works rather than leaving them stuck.
+        [System.Windows.Forms.MessageBox]::Show(
+            ('Could not copy to the clipboard ({0}).' -f $_.Exception.Message) +
+            "`r`n`r`n" + 'Use "Show log file (to attach)" instead and drag the file.',
+            'LevelPace') | Out-Null
+    }
+})
+
+$miShowLog = $menu.Items.Add('Show log file (to attach)')
+$miShowLog.Add_Click({
+    if (Test-Path $LogPath) {
+        # /select opens the folder with the file already highlighted, ready to
+        # drag into Discord. Better than a paste for a long log.
+        Start-Process explorer.exe ("/select," + $LogPath)
+    } else {
+        [System.Windows.Forms.MessageBox]::Show('Nothing logged yet.', 'LevelPace') | Out-Null
+    }
+})
+
 [void]$menu.Items.Add('-')
 $miQuit = $menu.Items.Add('Quit LevelPace')
 $miQuit.Add_Click({
