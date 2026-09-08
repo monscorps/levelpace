@@ -140,6 +140,10 @@ local function installGlobals()
   -- ==== inventory ====
   _G.GetInventoryItemID   = function(_, slot) return (harness.state.gear or {})[slot] end
   _G.GetInventoryItemLink = function(_, slot)
+    -- Prefer the item-level fixture when one is set; fall back to gear ids.
+    if (harness.state.items or {})[slot] then
+      return "|cffffffff|Hitem:slot" .. slot .. "|h[Item]|h|r"
+    end
     local id = (harness.state.gear or {})[slot]
     return id and ("|cffe6cc80|Hitem:" .. id .. ":0:0:0|h[Heirloom]|h|r") or nil
   end
@@ -148,6 +152,42 @@ local function installGlobals()
   _G.INVSLOT_LEGS, _G.INVSLOT_FEET, _G.INVSLOT_WRIST    = 7, 8, 9
   _G.INVSLOT_HAND, _G.INVSLOT_FINGER1, _G.INVSLOT_FINGER2 = 10, 11, 12
   _G.INVSLOT_TRINKET1, _G.INVSLOT_TRINKET2, _G.INVSLOT_BACK = 13, 14, 15
+
+  -- ==== PvP ====
+  -- Exactly TWO returns on 3.3.5a: hk, highestRank. Not three.
+  _G.GetPVPLifetimeStats  = function()
+    return harness.state.lifetimeHK or 0, harness.state.highestRank or 0
+  end
+  _G.GetPVPSessionStats   = function()
+    return harness.state.todayHK or 0, harness.state.todayHonor or 0
+  end
+  _G.GetPVPYesterdayStats = function()
+    return harness.state.yesterdayHK or 0, 0
+  end
+  _G.UnitGUID = function(unit)
+    if unit == "player" then return harness.state.playerGUID or "0xPLAYER" end
+    return nil
+  end
+  _G.bit = _G.bit or {
+    band = function(a, b)
+      local r, m = 0, 1
+      while a > 0 and b > 0 do
+        if a % 2 == 1 and b % 2 == 1 then r = r + m end
+        a, b, m = math.floor(a / 2), math.floor(b / 2), m * 2
+      end
+      return r
+    end,
+  }
+  -- harness.state.items = { [slot] = { ilvl, quality, equipLoc } }; a slot
+  -- with ilvl = false models a COLD ITEM CACHE, which is the trap on 3.3.5a.
+  _G.GetItemInfo = function(link)
+    local slot = tonumber(tostring(link):match("slot(%d+)"))
+    local it = slot and (harness.state.items or {})[slot]
+    if not it then return nil end
+    if it.ilvl == false then return nil end
+    return "Item", link, it.quality or 2, it.ilvl or 100, 1,
+           "Armor", "Mail", 1, it.equipLoc or "INVTYPE_CHEST", "tex", 0
+  end
 
   -- ==== quest log ====
   -- harness.state.questLog is an array of:

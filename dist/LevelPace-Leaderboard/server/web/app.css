@@ -193,6 +193,14 @@ main { max-width: 1180px; margin: 0 auto; padding: 2rem var(--pad) 4rem; }
   font-size: .95rem; color: var(--text); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
+/* "Look at this", not "this is a cheat". Deliberately understated: an
+   accusation rendered in red would be a verdict the data cannot support. */
+.flagbadge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; margin-left: .5rem; vertical-align: middle;
+  border: 1px solid var(--q-legendary); border-radius: 50%;
+  color: var(--q-legendary); font-size: .6rem; line-height: 1; cursor: help;
+}
 .meta { font-size: .66rem; color: var(--text-faint); letter-spacing: .04em; margin-top: .1rem; }
 .meta .sep { opacity: .4; padding: 0 .35rem; }
 

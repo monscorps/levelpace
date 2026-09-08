@@ -47,6 +47,34 @@ MAX_LEVEL_SECONDS = 60 * 60 * 24 * 14  # two weeks on one level: keep, but it ra
 MIN_LEVEL = 1
 MAX_LEVEL = 79  # completing level 80 is not a thing; 79 is the last transition
 
+# --- what can and cannot be defended -----------------------------------------
+#
+# Read this before adding "anti-cheat". Everything below is client-supplied:
+# the addon runs on the player's machine, the uploader runs on the player's
+# machine, and nothing on the game server corroborates any of it. A signature
+# would be signed with a key shipped inside the addon, which is extractable in
+# about thirty seconds. There is NO technical fix.
+#
+# So the goal is not prevention. It is:
+#   1. reject the physically impossible outright,
+#   2. FLAG the implausible for a human to look at, and
+#   3. make the leaderboard's ranking resistant to a single fabricated entry.
+#
+# (3) is already handled: the overall score is the MEDIAN of a player's
+# per-level percentiles, so one spectacular lie does not carry a record.
+#
+# Flags are recorded, never silently acted on. A flagged entry still stores;
+# the dashboard and /api/leaderboard can show or hide it, and a human decides.
+
+# Sustained levels-per-hour above this is not credible on any rate: it implies
+# clearing a level every ~18 seconds for the whole level. Flag, do not reject,
+# because a boosted low level genuinely can be very fast.
+IMPLAUSIBLE_LEVELS_PER_HOUR = 200.0
+
+# A completed level's elapsed time is a fact about the past. It should never
+# change on resubmission. Repeated edits are the clearest cheap signal there is.
+MAX_ELAPSED_DRIFT = 2  # seconds; anything beyond is a rewrite of history
+
 DDL = """
 CREATE TABLE IF NOT EXISTS players (
     id           TEXT PRIMARY KEY,
@@ -76,6 +104,7 @@ CREATE TABLE IF NOT EXISTS levels (
     deaths       INTEGER DEFAULT 0,
     corpse_run   INTEGER DEFAULT 0,
     rested_used  INTEGER DEFAULT 0,
+    flags        TEXT,          -- comma-separated suspicion flags, NULL = clean
     PRIMARY KEY (id, level),
     FOREIGN KEY (id) REFERENCES players(id) ON DELETE CASCADE
 );
@@ -106,12 +135,86 @@ def levels_per_hour(elapsed):
     return 3600.0 / elapsed
 
 
+def inspect_level(row, previous):
+    """Return (reject_reason, [flags]) for one submitted level record.
+
+    Rejection is reserved for the impossible. Everything merely suspicious is
+    flagged and stored, because a hard reject on a heuristic silently punishes
+    honest outliers -- and a fast boosted level looks exactly like a lie.
+    """
+    level = _int(row.get("level"))
+    elapsed = _int(row.get("elapsed"))
+
+    if level is None or not (MIN_LEVEL <= level <= MAX_LEVEL):
+        return "level out of range", []
+    if elapsed is None or elapsed < MIN_LEVEL_SECONDS:
+        return "elapsed below the physical minimum", []
+
+    flags = []
+
+    lph = levels_per_hour(elapsed)
+    if lph and lph > IMPLAUSIBLE_LEVELS_PER_HOUR:
+        flags.append("pace")
+
+    kills = _int(row.get("kills")) or 0
+    kill_xp = _int(row.get("kill")) or 0
+    quests = _int(row.get("quests")) or 0
+    quest_xp = _int(row.get("quest")) or 0
+    total_xp = (kill_xp + quest_xp
+                + (_int(row.get("explore")) or 0)
+                + (_int(row.get("unknown")) or 0))
+
+    # Internal coherence. These are cheap and catch hand-edited files, because
+    # someone lowering `elapsed` rarely thinks to keep the counters consistent.
+    if kills > 0 and kill_xp <= 0:
+        flags.append("kills-without-xp")
+    if kill_xp > 0 and kills <= 0:
+        flags.append("xp-without-kills")
+    if quests > 0 and quest_xp <= 0:
+        flags.append("quests-without-xp")
+    if total_xp <= 0:
+        flags.append("no-xp")
+
+    # More kills than seconds means better than one kill per second, sustained
+    # for the entire level.
+    if kills > elapsed:
+        flags.append("kill-rate")
+
+    # Deaths and corpse-run time have to be consistent with each other and
+    # cannot exceed the level itself.
+    deaths = _int(row.get("deaths")) or 0
+    corpse = _int(row.get("corpseRun")) or 0
+    if corpse > elapsed:
+        flags.append("corpse-exceeds-level")
+    if deaths == 0 and corpse > 0:
+        flags.append("corpse-without-death")
+
+    # The past does not change. A completed level's elapsed time being edited
+    # is the single clearest signal available.
+    if previous is not None:
+        prev_elapsed = previous["elapsed"]
+        if abs(prev_elapsed - elapsed) > MAX_ELAPSED_DRIFT:
+            flags.append("rewritten")
+
+    return None, flags
+
+
 class Store:
     def __init__(self, path):
         self.path = path
         self._local = threading.local()
         with self._conn() as c:
             c.executescript(DDL)
+            self._migrate(c)
+
+    @staticmethod
+    def _migrate(c):
+        """CREATE TABLE IF NOT EXISTS does nothing to a table that already
+        exists, so new columns have to be added explicitly for databases
+        created by an earlier version."""
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(levels)")}
+        if "flags" not in cols:
+            c.execute("ALTER TABLE levels ADD COLUMN flags TEXT")
 
     def _conn(self):
         conn = getattr(self._local, "conn", None)
@@ -157,33 +260,49 @@ class Store:
                  _int(blob.get("updated")) or now, first_seen, now, source_hash),
             )
 
-            accepted, rejected = 0, 0
+            accepted, rejected, flagged = 0, 0, 0
             for lv in (blob.get("levels") or []):
                 level = _int(lv.get("level"))
+                prev = None
+                if level is not None:
+                    prev = c.execute(
+                        "SELECT elapsed, flags FROM levels WHERE id = ? AND level = ?",
+                        (pid, level)).fetchone()
+
+                reason, flags = inspect_level(lv, prev)
+                if reason:
+                    rejected += 1
+                    continue
+
+                # A "rewritten" flag is sticky: clearing it by submitting the
+                # original value again would make the check pointless.
+                if prev is not None and prev["flags"]:
+                    for old in prev["flags"].split(","):
+                        if old and old not in flags:
+                            flags.append(old)
+                if flags:
+                    flagged += 1
+
                 elapsed = _int(lv.get("elapsed"))
-                if level is None or not (MIN_LEVEL <= level <= MAX_LEVEL):
-                    rejected += 1
-                    continue
-                if elapsed is None or elapsed < MIN_LEVEL_SECONDS:
-                    rejected += 1
-                    continue
                 c.execute(
                     """INSERT INTO levels
                          (id, level, elapsed, kill_xp, quest_xp, explore_xp, unknown_xp,
-                          kills, quests, deaths, corpse_run, rested_used)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                          kills, quests, deaths, corpse_run, rested_used, flags)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                        ON CONFLICT(id, level) DO UPDATE SET
                          elapsed=excluded.elapsed, kill_xp=excluded.kill_xp,
                          quest_xp=excluded.quest_xp, explore_xp=excluded.explore_xp,
                          unknown_xp=excluded.unknown_xp, kills=excluded.kills,
                          quests=excluded.quests, deaths=excluded.deaths,
-                         corpse_run=excluded.corpse_run, rested_used=excluded.rested_used""",
+                         corpse_run=excluded.corpse_run, rested_used=excluded.rested_used,
+                         flags=excluded.flags""",
                     (pid, level, elapsed,
                      _int(lv.get("kill")) or 0, _int(lv.get("quest")) or 0,
                      _int(lv.get("explore")) or 0, _int(lv.get("unknown")) or 0,
                      _int(lv.get("kills")) or 0, _int(lv.get("quests")) or 0,
                      _int(lv.get("deaths")) or 0, _int(lv.get("corpseRun")) or 0,
-                     _int(lv.get("restedUsed")) or 0),
+                     _int(lv.get("restedUsed")) or 0,
+                     ",".join(sorted(flags)) if flags else None),
                 )
                 accepted += 1
 
@@ -203,7 +322,7 @@ class Store:
                      _int(pvp.get("lifetimeKills")), _int(pvp.get("deaths")),
                      json.dumps(pvp.get("nemesis") or [])[:2000], now),
                 )
-        return accepted, rejected
+        return accepted, rejected, flagged
 
     def forget(self, pid):
         c = self._conn()
@@ -237,17 +356,17 @@ class Store:
     def _level_percentiles(self):
         """percentile of every (player, level) entry within its own level."""
         c = self._conn()
-        rows = c.execute("SELECT id, level, elapsed FROM levels").fetchall()
+        rows = c.execute("SELECT id, level, elapsed, flags FROM levels").fetchall()
         buckets = {}
         for r in rows:
             lph = levels_per_hour(r["elapsed"])
             if lph is not None:
-                buckets.setdefault(r["level"], []).append((r["id"], lph))
+                buckets.setdefault(r["level"], []).append((r["id"], lph, r["flags"]))
         out = {}
         for level, entries in buckets.items():
-            values = sorted(v for _, v in entries)
+            values = sorted(v for _, v, _ in entries)
             n = len(values)
-            for pid, v in entries:
+            for pid, v, fl in entries:
                 beaten = sum(1 for x in values if v > x)
                 # The player is IN this population, so the divisor is n - 1,
                 # not n. Dividing by n caps the fastest player at (n-1)/n --
@@ -261,7 +380,27 @@ class Store:
                     pct = None
                 out.setdefault(pid, []).append({
                     "level": level, "lph": v, "pct": pct, "sample": n,
+                    "flags": fl.split(",") if fl else [],
                 })
+        return out
+
+    def flagged(self, limit=200):
+        """Everything a human should look at. Nothing is hidden automatically;
+        a flag is a prompt to review, not a verdict."""
+        c = self._conn()
+        rows = c.execute(
+            """SELECT l.id, l.level, l.elapsed, l.flags, l.kills, l.kill_xp,
+                      l.quests, l.quest_xp, l.deaths, l.corpse_run,
+                      p.display, p.realm, p.source_hash, p.last_seen
+               FROM levels l JOIN players p ON p.id = l.id
+               WHERE l.flags IS NOT NULL AND l.flags != ''
+               ORDER BY l.elapsed ASC LIMIT ?""", (limit,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["flags"] = (d.get("flags") or "").split(",")
+            d["levelsPerHour"] = round(levels_per_hour(d["elapsed"]) or 0, 3)
+            out.append(d)
         return out
 
     def leaderboard(self, level=None, limit=100):
@@ -283,6 +422,7 @@ class Store:
                             "levelsPerHour": round(it["lph"], 3),
                             "minutes": round(3600.0 / it["lph"] / 60.0, 1),
                             "sample": it["sample"],
+                            "flags": it["flags"],
                         })
             entries.sort(key=lambda e: -e["levelsPerHour"])
         else:
@@ -312,6 +452,7 @@ class Store:
                     "recorded": len(items),
                     "best": round(best, 1) if best is not None else None,
                     "questRate": p["quest_rate"],
+                    "flags": sorted({f for i in items for f in i["flags"]}),
                 })
             # Unscored players sort last rather than being treated as zero.
             entries.sort(key=lambda e: (e["parse"] is None, -(e["parse"] or 0), -e["levels"]))
@@ -459,16 +600,18 @@ class Handler(BaseHTTPRequestHandler):
             if len(blobs) > 50:
                 return self._err(400, "too many characters in one submission")
             src = self._source()
-            total, rejected, errors = 0, 0, []
+            total, rejected, flagged, errors = 0, 0, 0, []
             for b in blobs:
                 try:
-                    a, r = self.store.submit(b, src)
+                    a, r, fl = self.store.submit(b, src)
                     total += a
                     rejected += r
+                    flagged += fl
                 except Exception as e:
                     errors.append(str(e))
             return self._json({"ok": not errors, "levels": total,
-                               "rejected": rejected, "errors": errors})
+                               "rejected": rejected, "flagged": flagged,
+                               "errors": errors})
 
         if path == "/api/forget":
             pid = str(payload.get("id") or "")
@@ -492,6 +635,9 @@ class Handler(BaseHTTPRequestHandler):
             bracket = _int(q.get("bracket", [None])[0])
             limit = min(_int(q.get("limit", [100])[0]) or 100, 500)
             return self._json({"entries": self.store.twinks(bracket, limit)})
+        if u.path == "/api/flagged":
+            limit = min(_int(q.get("limit", [200])[0]) or 200, 1000)
+            return self._json({"entries": self.store.flagged(limit)})
         if u.path == "/api/stats":
             return self._json(self.store.stats())
 

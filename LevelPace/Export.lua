@@ -108,6 +108,11 @@ function Export:Write()
     questRateSource = LP.Rates and LP.Rates:QuestRateSource() or nil,
     updated = (time and time()) or 0,
     levels = levelRows(),
+    -- PvP block, only when the player opted into the twink board as well.
+    -- Nemesis names are OTHER people's character names, so this is a second,
+    -- separate consent rather than something that rides along with levelling
+    -- stats.
+    pvp = (share.sharePvP and LP.PvP) and LP.PvP:Payload() or nil,
   }
   LP.gdb.export[key] = blob
   self:WriteJSON()

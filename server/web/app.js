@@ -67,9 +67,33 @@
     return row;
   }
 
+  // Flags mean "a human should look at this", never "this is a cheater".
+  // Shown rather than hidden, because quietly dropping entries would make the
+  // board look clean while telling nobody anything.
+  var FLAG_TEXT = {
+    "pace": "implausibly fast",
+    "rewritten": "elapsed time was edited after the level was recorded",
+    "kills-without-xp": "kills recorded but no kill XP",
+    "xp-without-kills": "kill XP recorded but no kills",
+    "quests-without-xp": "quests recorded but no quest XP",
+    "no-xp": "no XP recorded at all",
+    "kill-rate": "more kills than seconds in the level",
+    "corpse-exceeds-level": "corpse-run time longer than the level",
+    "corpse-without-death": "corpse-run time with no deaths"
+  };
+
   function personCell(e) {
     var who = el("div", "who");
-    who.appendChild(el("div", "name", e.display || "Unknown"));
+    var nameRow = el("div", "name");
+    nameRow.appendChild(document.createTextNode(e.display || "Unknown"));
+    if (e.flags && e.flags.length) {
+      var badge = el("span", "flagbadge", "?");
+      badge.title = "Needs review: " + e.flags.map(function (f) {
+        return FLAG_TEXT[f] || f;
+      }).join("; ");
+      nameRow.appendChild(badge);
+    }
+    who.appendChild(nameRow);
     var bits = [];
     if (e.realm) bits.push(e.realm);
     if (e.class) bits.push(e.class.toLowerCase());

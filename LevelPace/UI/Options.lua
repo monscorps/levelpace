@@ -401,7 +401,22 @@ function Options:BuildSharing()
   track(p, makeCheck(p, "Include my faction", 16, y,
     function() return db.share.shareFaction end,
     function(v) db.share.shareFaction = v; LP:Fire("SHARE_CHANGED") end))
-  y = y - 40
+  y = y - 34
+
+  track(p, makeCheck(p, "Also share PvP stats (twink board)", 16, y,
+    function() return db.share.sharePvP end,
+    function(v) db.share.sharePvP = v; LP:Fire("SHARE_CHANGED") end))
+  y = y - 26
+  for _, line in ipairs({
+    "Kills, item level, deaths, and the names of the players who kill you most.",
+    "Those are OTHER people's character names, and they did not agree to it --",
+    "which is why this is a separate tick rather than part of the one above.",
+    "Weekly kills and nemeses are BEST GUESSES: the client has no API for",
+    "either, so both are reconstructed. The board labels them as approximate.",
+  }) do
+    makeLabel(p, "- " .. line, 22, y, "GameFontDisableSmall"); y = y - 16
+  end
+  y = y - 24
 
   makeLabel(p, "Display name on the board (blank = character name)", 16, y, "GameFontNormalSmall")
   y = y - 22

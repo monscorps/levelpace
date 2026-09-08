@@ -132,6 +132,10 @@ LP.defaults = {
       shareRealm = true,
       shareClass = true,
       shareFaction = true,
+      -- Separate opt-in: the PvP payload contains OTHER players' character
+      -- names (your nemeses), who never agreed to anything. That deserves its
+      -- own decision rather than riding along with your own levelling stats.
+      sharePvP = false,
     },
     gapWarnSeconds = 600,
     countRestedInProjection = true,

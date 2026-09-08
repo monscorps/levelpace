@@ -16,6 +16,7 @@ History.lua
 Estimator.lua
 Quests.lua
 Parse.lua
+PvP.lua
 Baseline.lua
 Export.lua
 UI\Bar.lua

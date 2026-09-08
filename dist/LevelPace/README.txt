@@ -2,74 +2,99 @@
 
 An XP tracker for **World of Warcraft 3.3.5a** (Wrath of the Lich King) that answers one question honestly: *given what I am actually doing right now, what is the fastest way to my next level?*
 
+Plus an optional leaderboard that ranks players by pace, WarcraftLogs-style.
+
+```
+LevelPace/     the addon          -> Interface\AddOns\LevelPace\
+uploader/      carries data out   -> runs on a player's PC
+server/        leaderboard + web  -> runs on a host
+tests/         600+ assertions    -> ./tests/run.sh
+```
+
+## The addon
+
 - A slim, movable, fully themeable XP bar and stats box.
-- Time-to-level and mobs-to-level, projected from measurement rather than a formula guess.
-- **A ranking of the quests in your log by XP per minute of real, measured effort, compared against your grind rate.**
+- Time-to-level and mobs-to-level, measured rather than guessed — and the estimate *decays while you stand still*, because that is what actually happens to your pace.
+- **Quests in your log ranked by XP per minute of measured effort**, against your grind rate.
+- A pace "parse" gauge, scored 0–100 in the WarcraftLogs colour bands.
 
-That last one is the point. No addon on any WoW version estimates quest *effort* — the closest prior art (`XToLevel`) treats a quest as a scalar XP number and stops there. LevelPace times your objective counters ticking and turns that into "this quest is worth 3,150 XP/min, you're grinding at 520".
+The quest ranking is the reason it exists. No addon on any WoW version estimates quest *effort* — the closest prior art (`XToLevel`) treats a quest as a scalar XP number and stops there. LevelPace times your objective counters ticking and turns that into `3,150 XP/min` against a grind rate of `520`.
 
-## Install
+**Install:** copy the `LevelPace` folder into `Interface\AddOns\`. Type `/lp`.
 
-1. Copy the **`LevelPace`** folder into:
-   ```
-   C:\<your WoW folder>\Interface\AddOns\
-   ```
-   You should end up with `...\Interface\AddOns\LevelPace\LevelPace.toc`. If you see `AddOns\LevelPace\LevelPace\LevelPace.toc`, you nested it one level too deep.
-2. Restart the client (or `/console reloadui` if it was already running).
-3. At the character screen, click **AddOns** and make sure LevelPace is enabled. If it shows as out of date, tick **Load out of date AddOns**.
+## Design stance: nothing is sanitised
 
-## Commands
+Deaths count. Corpse runs count. The walk between camps counts. All of it really happened and really slowed you down, so a number that quietly deletes your downtime is not measuring your levelling — it is measuring a fantasy. If you go AFK for two hours the addon *tells* you the estimate includes a two-hour gap. It does not remove it. `/lp reset` is the only filter, and it is yours to pull.
 
-| Command | What it does |
-|---|---|
-| `/lp` | Open the options panel |
-| `/lp quests` | Print the quest ranking to chat |
-| `/lp reset` | Reset tracking for the current level — the only filter in the addon |
-| `/lp lock` / `/lp unlock` | Stop / allow dragging the frames |
-| `/lp show` / `/lp hide` | Toggle the display |
-| `/lp debug` | Dump the last 20 parsed XP events |
+## Things that took research to get right
 
-Hover the bar or the box for the full breakdown: where your XP came from, how much of it was rested, how long your recent levels actually took, and how much the addon trusts its own projection.
+This client is old and widely mis-documented. A few that would otherwise have been silent bugs:
 
-## How it works
+- **`GetRewardXP()` is the server's value**, already multiplied by `Rate.XP.Quest`. Comparing it against the XP you receive always yields x1 — a x5 server would report as blizzlike. `GetQuestLogRewardXP()` is the *client's* blizzlike number, and **the ratio of the two is your server's quest rate**, exactly, from one reward panel.
+- **Rested is a 200% doubling, not the 150%** the game's own tooltip claims — and it does not apply to quest XP at all. A pool of `P` supplies `2P` XP in exchange for `P` XP of base killing; formulating that wrongly understates time-to-level by up to 5×.
+- **In a raid group every XP message carries `(-N raid penalty)`** and matches none of the ordinary patterns, so naive parsing silently stops tracking entirely.
+- **Heirloom XP auras are invisible to `UnitBuff`** — passive item auras get no client aura slot — so they must be found by scanning equipped items.
+- The widely-quoted `5 × mobLevel + 45` kill-XP formula **uses player level**, and the constant comes from the map's expansion tier (45 / 235 / 580).
 
-**It measures, it doesn't guess.** Private servers run arbitrary XP rates, and `Rate.XP.Kill` and `Rate.XP.Quest` are *separate* config values — a server can run x5 kills with x1 quests, which completely inverts whether questing is worth it. There is no API that reports either. So LevelPace learns them:
+`docs/superpowers/specs/` records the verified API surface with sources.
 
-Two quest APIs disagree on purpose, and the disagreement *is* the answer:
+## The leaderboard (optional)
 
-| API | Returns |
-|---|---|
-| `GetQuestLogRewardXP()` | **Blizzlike.** Your client recomputes it locally from `QuestXP.dbc` — the server only ever sends a difficulty *index*, never an XP number. |
-| `GetRewardXP()` | **Server truth.** Already multiplied by `Rate.XP.Quest` and by any XP auras. |
+A WoW addon **cannot use the network** — no sockets, no HTTP in the Lua sandbox. So the loop is closed in three pieces:
 
-Their ratio is your server's quest multiplier, exactly. **Open any quest's reward panel once and it knows** — no turn-ins to wait for, no statistics. (A turn-in-observation fallback exists for the case where you never open a reward panel.)
+```
+addon  --writes SavedVariables-->  uploader  --POST-->  server
+addon  <--reads Baseline.lua-----  uploader  <--GET---  server
+```
 
-The kill-side multiplier is deliberately *not* recovered — it would need the mob's level (absent from the chat message) and the zone's content tier, and a guessed multiplier is worse than none. Nothing needs it: your grind pace is measured directly from XP you actually received.
+The uploader is PowerShell and needs **nothing installed** on Windows. The server is Python standard library only, over SQLite — no pip, no framework.
 
-Until it knows something, it says so rather than showing you a confident wrong number.
+Ranking is by **levels per hour**, not XP per hour: XP/hr is not comparable across levels (a level 78 in Icecrown out-earns a level 20 regardless of skill) nor across servers with different rates.
 
-**Rested is modelled properly.** It is a 200% doubling, not the 150% the game's own tooltip claims, it draws from a finite pool, and it does **not** apply to quest XP. So being rested genuinely makes grinding better and does nothing for quests — and the projection accounts for the pool running dry mid-level.
+See [`server/README.md`](server/README.md) to run it.
 
-**Nothing is filtered.** Deaths count. Corpse runs count. The walk between camps counts. All of it really happened and really slowed you down. If you go AFK for two hours the addon will *tell* you the estimate includes a two-hour gap — it will not quietly delete it. `/lp reset` is the only filter, and it's yours to pull.
+### About cheating
 
-## Known limitations
+**It cannot be prevented, and this is not the kind of software that should pretend otherwise.**
 
-These are real and worth knowing before you trust a number:
+Every number is produced on the player's machine. They can edit their SavedVariables, edit the addon's Lua, or skip both and POST fabricated JSON at the API. Signing the payload would use a key shipped inside the addon, extractable in about thirty seconds. WarcraftLogs has the same hole.
 
-- **Quests with no countable objective can't be timed.** Escorts, "speak to X", "explore Y" — there is no counter to watch, so LevelPace shows the XP and an explicit `?` rather than inventing a rate. They sort last.
-- **The quest rate needs one reward panel opened** before the ranking has real numbers. Until then quest XP is shown at blizzlike values and flagged. It persists per realm, so it's a one-time cost.
-- **Recruit-A-Friend is undetectable.** There is no 3.3.5a client API that reports whether RAF triple XP is active. If you have it, the learned rates absorb it after a short lag.
-- **SavedVariables are written on logout, not continuously.** A client crash or Alt+F4 loses history since your last clean logout. There is no flush API on this client version.
-- **English is not required, but only the format strings are translated.** Parsing is built from your client's own global strings, so other locales work. The one exception is heirloom detection for *server-custom* items, which falls back to reading tooltip text.
+What is actually done:
+
+1. **Reject the impossible** — a level cleared in under 30 seconds, a level outside 1–79.
+2. **Flag the implausible for a human** — an implausible pace, kills with no kill XP, more kills than seconds, corpse-run time longer than the level, and (the clearest signal) a completed level whose elapsed time *changed on resubmission*, since the past does not change. Flags are shown, never silently acted on.
+3. **Make the ranking resistant** — the overall score is the **median** of a player's per-level percentiles, so one spectacular lie cannot carry a record.
+
+The dashboard says all of this on the page rather than burying it.
+
+### About privacy
+
+Sharing is **off by default** and lists exactly what it sends: per completed level, the time taken, XP by source, kills, quests, deaths and corpse-run seconds — plus a display name and a random id. Never zones, coordinates, quest names, group members, or chat.
+
+PvP stats are a **separate** opt-in, because the nemesis list contains other players' character names and those people did not agree to anything.
+
+If you host this publicly, you are the data controller for everyone who opts in. `/api/forget` exists; make it easy to find.
 
 ## Development
 
-Pure Lua 5.1, zero dependencies. The logic modules (`Ledger`, `Rates`, `History`, `Estimator`, `Quests`) never touch a frame, so they run under a mock WoW environment outside the game:
+Pure Lua 5.1, zero addon dependencies. The logic modules never touch a frame, so they run under a mock WoW environment outside the game:
 
 ```bash
 ./tests/run.sh
 ```
 
-Requires `luajit` — the target client is Lua 5.1 and the runner refuses to run under 5.5, whose `unpack` and integer-division semantics would mask real bugs.
+Requires `luajit` — the target is Lua 5.1, and the runner refuses to run under 5.5 whose `unpack` and integer-division semantics would mask real bugs.
 
-Design notes and the researched 3.3.5a API surface are in `docs/superpowers/specs/`.
+```bash
+./build.sh
+```
+
+Produces `dist/LevelPace.zip` (the addon) and `dist/LevelPace-Leaderboard.zip` (server + uploader + launchers).
+
+## Known limitations
+
+- **Quests with no countable objective can't be timed** — escorts, "speak to X". Shown with an explicit `?` rather than an invented number.
+- **Recruit-A-Friend is undetectable** — no client API reports it.
+- **Weekly PvP kills and nemeses are reconstructions**, not readings. `GetPVPThisWeekStats()` was removed in patch 2.0.1, and `PARTY_KILL` is unicast to the *killer's* group so the victim never sees who killed them. Both are labelled approximate wherever they appear.
+- **Heirlooms report item level 1**, so they are excluded from the item-level average and counted separately.
+- **SavedVariables are written on logout, not continuously.** A crash loses history since the last clean exit; there is no flush API on this client.
