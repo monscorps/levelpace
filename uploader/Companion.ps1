@@ -347,6 +347,37 @@ function Find-AddonDir {
     return $null
 }
 
+# The single most common addon install failure, and it cost two players and a
+# full day here: Windows' Extract-All wraps the zip's contents in a folder
+# named after the ZIP, so the player ends up with AddOns\LevelPace\LevelPace\
+# (or AddOns\1-ADDON-LevelPace\). WoW sees no .toc directly inside the top
+# folder and silently loads NOTHING -- no slash commands, no minimap button --
+# while this companion happily reported addonFound=true because the path
+# existed. This names the exact mistake instead of letting 'true' lie.
+function Get-AddonInstallProblem {
+    foreach ($root in (Find-WowRoots)) {
+        $addons = Join-Path $root 'Interface\AddOns'
+        if (-not (Test-Path $addons)) { continue }
+
+        $d = Join-Path $addons 'LevelPace'
+        if (Test-Path (Join-Path $d 'LevelPace.toc')) { return $null }  # correct
+
+        if (Test-Path (Join-Path $d 'LevelPace\LevelPace.toc')) {
+            return "NESTED: the addon is at AddOns\LevelPace\LevelPace. Move the INNER LevelPace folder up one level."
+        }
+        foreach ($sub in (Get-ChildItem $addons -Directory -ErrorAction SilentlyContinue)) {
+            if (Test-Path (Join-Path $sub.FullName 'LevelPace\LevelPace.toc')) {
+                return ("NESTED: the addon is inside AddOns\{0}. Move the LevelPace folder out of it, directly into AddOns." -f $sub.Name)
+            }
+        }
+        if (Test-Path $d) {
+            return "BROKEN: AddOns\LevelPace exists but has no LevelPace.toc inside. Delete it and re-extract the addon zip."
+        }
+        return "MISSING: no LevelPace folder in Interface\AddOns at all."
+    }
+    return $null
+}
+
 # ---------------------------------------------------------------------------
 # The payload
 #
@@ -535,6 +566,16 @@ function Invoke-Sync([switch]$Quiet) {
             $detail = 'no saved-variables file yet'
             $addonHere = $false
             if (Find-AddonDir) { $addonHere = $true }
+
+            # An install problem overrides every other diagnosis: if WoW is
+            # not loading the addon at all, nothing downstream matters.
+            $installProblem = Get-AddonInstallProblem
+            if ($installProblem) {
+                Write-Log ("  ADDON NOT LOADING: {0}" -f $installProblem)
+                Write-Log "  (WoW needs AddOns\LevelPace\LevelPace.toc at exactly that depth.)"
+                Send-Hello $cfg $true $false $false $installProblem
+                return
+            }
 
             if ($sv.Count -gt 0) {
                 $raw = ''

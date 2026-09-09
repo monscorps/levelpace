@@ -71,6 +71,13 @@ you end up with:
 World of Warcraft\Interface\AddOns\LevelPace\LevelPace.toc
 ```
 
+> **The one mistake that breaks everything:** Windows "Extract All" wraps the
+> contents in an extra folder named after the zip. If you end up with
+> `AddOns\LevelPace\LevelPace\...` or `AddOns\1-ADDON-LevelPace\...`, WoW
+> silently loads nothing — no `/lp`, no minimap skull. Drag the **inner**
+> `LevelPace` folder directly into `AddOns`. The companion's log now names
+> this exact problem if it sees it.
+
 Start WoW. A **red skull on a black button appears on your minimap** —
 everything is behind it. `/lp modules` confirms all three parts loaded.
 
