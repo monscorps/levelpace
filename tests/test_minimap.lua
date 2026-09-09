@@ -142,4 +142,33 @@ h.run("no menu entry is missing its handler", function()
   end
 end)
 
+h.run("sharing is reachable from the menu and starts off", function()
+  local LP, MM = boot()
+  local share
+  for _, it in ipairs(MM:MenuItems()) do
+    if it.text == "Share to leaderboard" then share = it end
+  end
+  h.ok(share, "the entry exists")
+  -- Off by default is deliberate: nothing leaves the machine unasked. But it
+  -- being buried in an options panel was the commonest reason a player
+  -- uploaded nothing at all.
+  h.eq(share.checked, false, "off by default")
+  share.func()
+  h.eq(LP.db.profile.share.enabled, true, "the menu turns it on")
+end)
+
+h.run("PvP sharing is a separate decision", function()
+  local LP, MM = boot()
+  local pvp
+  for _, it in ipairs(MM:MenuItems()) do
+    if it.text == "Also share PvP" then pvp = it end
+  end
+  h.ok(pvp, "the entry exists")
+  h.eq(pvp.checked, false, "off by default")
+  -- It carries other people's character names, so it never rides along with
+  -- the levelling opt-in.
+  LP.db.profile.share.enabled = true
+  h.eq(LP.db.profile.share.sharePvP, false, "still off after enabling levelling sharing")
+end)
+
 os.exit(h.report() and 0 or 1)

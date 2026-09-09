@@ -114,6 +114,32 @@ function MM:MenuItems()
 
   items[#items + 1] = { text = "", isSeparator = true, notCheckable = true, disabled = true }
 
+  -- Nothing reaches the leaderboard until this is on, and it is off by
+  -- default on purpose. Burying it in an options panel made it the single
+  -- most common reason a player uploads nothing.
+  items[#items + 1] = {
+    text = "Share to leaderboard",
+    tooltip = "Send your stats. Nothing leaves your machine until this is on.",
+    checked = (LP.db and LP.db.profile.share.enabled) or false,
+    func = function()
+      LP.db.profile.share.enabled = not LP.db.profile.share.enabled
+      LP:Fire("SHARE_CHANGED")
+      LP:Print("sharing " .. (LP.db.profile.share.enabled and
+        "on -- log out or /reload, then the companion sends it." or "off"))
+    end,
+  }
+  items[#items + 1] = {
+    text = "Also share PvP",
+    tooltip = "Includes nemesis names, which are other people's characters.",
+    checked = (LP.db and LP.db.profile.share.sharePvP) or false,
+    func = function()
+      LP.db.profile.share.sharePvP = not LP.db.profile.share.sharePvP
+      LP:Fire("SHARE_CHANGED")
+    end,
+  }
+
+  items[#items + 1] = { text = "", isSeparator = true, notCheckable = true, disabled = true }
+
   items[#items + 1] = {
     text = "Lock frames", checked = LP.db and LP.db.profile.locked or false,
     func = function()
@@ -172,7 +198,12 @@ local function showMenu()
       info.disabled = it.disabled
       info.notCheckable = it.notCheckable or it.isTitle
       info.checked = it.checked
-      info.keepShownOnClick = (it.moduleID ~= nil) or (it.text == "Lock frames")
+      -- Checkbox entries keep the menu open, so several can be changed in one
+      -- go; the ones that open a window close it, because you want the window.
+      info.keepShownOnClick = (it.moduleID ~= nil)
+        or (it.text == "Lock frames")
+        or (it.text == "Share to leaderboard")
+        or (it.text == "Also share PvP")
       info.func = it.func
       info.tooltipTitle = it.text
       info.tooltipText = it.tooltip

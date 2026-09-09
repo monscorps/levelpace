@@ -452,11 +452,27 @@ local function dispatch(input)
     if LP.Board then LP.Board:Toggle() else LP:Print("board module not loaded") end
   elseif cmd == "share" then
     if not LP.Export then LP:Print("export module not loaded") return end
+    local arg = string.lower(strtrim(rest or ""))
+    -- Turning sharing on used to mean finding a checkbox three clicks into an
+    -- options panel. It is the single thing standing between a player and the
+    -- board, so it gets a command.
+    if arg == "on" or arg == "off" then
+      LP.db.profile.share.enabled = (arg == "on")
+      LP:Fire("SHARE_CHANGED")
+      LP:Print("sharing " .. arg ..
+        (arg == "on" and " -- log out or /reload, then the companion sends it." or ""))
+      return
+    elseif arg == "pvp on" or arg == "pvp off" then
+      LP.db.profile.share.sharePvP = (arg == "pvp on")
+      LP:Fire("SHARE_CHANGED")
+      LP:Print("PvP sharing " .. (LP.db.profile.share.sharePvP and "on" or "off"))
+      return
+    end
     LP:Print(LP.Export:Summary())
     if LP.Export:Enabled() then
-      LP:Print("data is written on logout or /reload; the uploader sends it from there.")
+      LP:Print("data is written on logout or /reload; the companion sends it from there.")
     else
-      LP:Print("sharing is off. /lp then Leaderboard to turn it on.")
+      LP:Print("sharing is OFF. Turn it on with:  /lp share on")
     end
   elseif cmd == "debug" then
     LP.debug = not LP.debug
