@@ -4,229 +4,214 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LevelPace — Wrath 3.3.5a</title>
-<meta name="description" content="An addon that measures how fast you actually level, who keeps killing you in battlegrounds, and which rares are being killed — with a shared leaderboard.">
+<meta name="description" content="Measures how fast you actually level, who keeps killing you in battlegrounds, and which rares are being killed. With a shared leaderboard.">
+<link rel="icon" href="mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="mark.svg">
+<meta property="og:title" content="LevelPace — Wrath 3.3.5a">
+<meta property="og:description" content="How fast you actually level. Who keeps killing you. Which rares are dying.">
+<meta property="og:image" content="mark.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <!-- Relative, not absolute: GitHub Pages serves this from /<repo>/, not the
      domain root, and /app.css would 404 there. -->
 <link rel="stylesheet" href="app.css">
-<style>
-/* Additions for the rewritten page. app.css supplies the palette, grain,
-   aurora and quality colours, so this stays visibly the same site.
-   1180px matches main and .masthead-inner -- a narrower column here made the
-   page look like two different layouts stacked. */
-.lede, .what, .steps, .talk, .limits {
-  max-width: 1180px; margin: 0 auto; padding: 0 var(--pad);
-}
-.lede { margin-top: 2.4rem; }
-.lede p { font-size: 1.02rem; line-height: 1.75; color: var(--text); max-width: 62ch; }
-.lede .sub { color: var(--text-dim); font-size: .9rem; }
-
-.what { margin-top: 2.6rem; display: grid; gap: 1.1rem;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.what section { border: 1px solid var(--rule); padding: 1.15rem 1.25rem;
-                background: #ffffff04; }
-.what h3 { font-family: var(--serif); font-weight: 400; font-size: 1.3rem;
-           margin: 0 0 .55rem; color: var(--text); }
-.what ul { margin: 0; padding-left: 1.05rem; color: var(--text-dim);
-           font-size: .86rem; line-height: 1.65; }
-.what li { margin: .28rem 0; }
-.what strong { color: var(--text); font-weight: 500; }
-
-.steps { margin-top: 2.8rem; }
-.steps h2, .talk h2 { font-family: var(--serif); font-weight: 400;
-                      font-size: 1.75rem; margin: 0 0 .8rem; color: var(--text); }
-.steps ol { padding-left: 1.3rem; color: var(--text-dim); line-height: 1.8;
-            max-width: 68ch; }
-.steps li { margin: .5rem 0; }
-.steps strong { color: var(--text); }
-.steps .aside { color: var(--text-faint); font-size: .84rem; margin-top: 1rem;
-                max-width: 68ch; line-height: 1.7; }
-
-.talk { margin-top: 2.8rem; }
-.talk p { color: var(--text-dim); line-height: 1.75; max-width: 68ch; }
-
-.limits { margin-top: 2.8rem; margin-bottom: 1rem; }
-.limits summary { cursor: pointer; font-family: var(--serif); font-size: 1.4rem;
-                  color: var(--text); }
-.limits summary:hover { color: var(--frost); }
-.limits ul { color: var(--text-dim); font-size: .88rem; line-height: 1.75;
-             padding-left: 1.1rem; max-width: 68ch; }
-.limits li { margin: .45rem 0; }
-.limits strong { color: var(--text); font-weight: 500; }
-
-code { background: #ffffff0a; border: 1px solid var(--rule);
-       padding: .05rem .38rem; border-radius: 3px; font-size: .86em;
-       color: var(--frost); }
-
-.livedot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-           background: var(--text-faint); margin-right: .4rem;
-           vertical-align: middle; }
-.livedot.ok  { background: #34d17a; box-shadow: 0 0 10px #34d17a99; }
-.livedot.bad { background: #ff5f56; box-shadow: 0 0 10px #ff5f5699; }
-</style>
 </head>
 <body>
 
 <div class="grain" aria-hidden="true"></div>
 <div class="aurora" aria-hidden="true"></div>
 
-<header class="masthead">
-  <div class="masthead-inner">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <h1>LevelPace</h1>
-      <p class="brand-sub"><em>levelling, battlegrounds &amp; rares</em> — Wrath 3.3.5a</p>
+<!-- ========================================================= hero -->
+<header class="hero">
+  <a class="hero-brand" href="#board-section">
+    <img src="mark.svg" alt="" width="34" height="34">
+    <span>LevelPace</span>
+  </a>
+
+  <div class="hero-grid">
+    <div class="hero-say">
+      <img class="hero-mark" src="mark.svg" alt="" width="96" height="96">
+      <h1>How fast are you<br><em>actually</em> levelling?</h1>
+      <p class="hero-sub">
+        Not XP per hour. <strong>Levels per hour</strong> — counting the deaths,
+        the corpse runs, and the time stood in a bank.
+      </p>
+      <div class="hero-cta">
+        <a class="btn" href="https://github.com/monscorps/levelpace/releases/latest">
+          Download <span aria-hidden="true">&rarr;</span>
+        </a>
+        <span class="chip">Wrath 3.3.5a</span>
+        <span class="chip">free &amp; open source</span>
+        <span class="chip">no account</span>
+      </div>
+      <p class="hero-live">
+        <span class="livedot" id="dot"></span><span id="livetext">checking the board…</span>
+      </p>
     </div>
-    <a class="getit" id="getit" href="https://github.com/monscorps/levelpace/releases/latest">
-      Download <span aria-hidden="true">&rarr;</span>
-    </a>
-    <dl class="vitals" id="vitals">
-      <div><dt>players</dt><dd id="v-players">—</dd></div>
-      <div><dt>levels logged</dt><dd id="v-levels">—</dd></div>
-      <div><dt>rare kills</dt><dd id="v-rares">—</dd></div>
-    </dl>
+
+    <!-- The single most useful thing on the page: what it looks like in game. -->
+    <figure class="shot" aria-label="The in-game meter">
+      <div class="shot-bar">
+        <span class="shot-dot"></span><span class="shot-dot"></span><span class="shot-dot"></span>
+        <span class="shot-title">BG damage</span>
+      </div>
+      <ol class="shot-rows">
+        <li><b>Ragebeard</b><i style="--w:100%;--c:var(--q-artifact)"></i><u>412,000</u></li>
+        <li class="you"><b>&rsaquo; You</b><i style="--w:86%;--c:var(--q-epic)"></i><u>356,000</u></li>
+        <li><b>Ironhoof</b><i style="--w:72%;--c:var(--q-epic)"></i><u>298,000</u></li>
+        <li><b>Blackfang</b><i style="--w:66%;--c:var(--q-rare)"></i><u>271,000</u></li>
+        <li><b>Kaelith</b><i style="--w:46%;--c:var(--q-rare)"></i><u>189,000</u></li>
+        <li><b>Thornwood</b><i style="--w:34%;--c:var(--q-uncommon)"></i><u>140,000</u></li>
+        <li><b>Mistcaller</b><i style="--w:12%;--c:var(--q-common)"></i><u>18,000</u></li>
+      </ol>
+      <figcaption>
+        Bar <em>length</em> is your share of the leader. Bar <em>colour</em> is your
+        percentile. Two different questions.
+      </figcaption>
+    </figure>
   </div>
+
+  <dl class="vitals" id="vitals">
+    <div><dt>players</dt><dd id="v-players">—</dd></div>
+    <div><dt>levels logged</dt><dd id="v-levels">—</dd></div>
+    <div><dt>rare kills</dt><dd id="v-rares">—</dd></div>
+  </dl>
 </header>
 
-<div class="lede">
-  <p><strong>An addon that measures how fast you are actually levelling</strong> —
-  counting the deaths, the corpse runs and the time stood in a bank, because
-  that is how levelling really goes. It also tracks who keeps killing you in
-  battlegrounds, and which rares are being killed on your server.</p>
-  <p class="sub">Free, open source, and works on any 3.3.5a private server.
-  No account, no sign-up, no email. <span class="livedot" id="dot"></span><span id="livetext">checking the board…</span></p>
-</div>
-
-<div class="what">
-  <section>
-    <h3>Levelling</h3>
-    <ul>
-      <li>XP per hour, time to next level, mobs to go</li>
-      <li><strong>Which quests in your log are worth doing</strong> — measured against how long they are actually taking you</li>
-      <li>Rested XP handled properly</li>
-    </ul>
-  </section>
-  <section>
+<!-- ========================================================= modules -->
+<section class="modules">
+  <article>
+    <span class="mod-n">01</span>
+    <h3>LevelPace</h3>
+    <p>Time to level, mobs to go, and <strong>which quests in your log are
+    worth doing</strong> — measured against how long they are actually taking
+    <em>you</em>.</p>
+  </article>
+  <article>
+    <span class="mod-n">02</span>
     <h3>Nemesis</h3>
-    <ul>
-      <li>Live meter of how you rank against your own team</li>
-      <li>Who joined, who left, and when your arch nemesis turns up</li>
-      <li>Flags, kills, deaths, killstreaks, 14 achievements</li>
-    </ul>
-  </section>
-  <section>
+    <p>Who joined, who left, and when the player who keeps killing you turns
+    up. <strong>Flags, killstreaks, 14 achievements.</strong></p>
+  </article>
+  <article>
+    <span class="mod-n">03</span>
     <h3>Rare Finder</h3>
-    <ul>
-      <li>420 rares, recognised by creature id — works in any client language</li>
-      <li>Kills by people near you count too</li>
-      <li>Learns your server's custom rares by itself</li>
-    </ul>
-  </section>
-</div>
+    <p><strong>420 rares</strong>, recognised by creature id in any language.
+    Kills by people standing near you count too.</p>
+  </article>
+</section>
 
-<div class="steps">
-  <h2>Getting it</h2>
-  <ol>
-    <li>Download <strong>1-ADDON-LevelPace.zip</strong> and unzip it into
-      <code>Interface\AddOns</code>. Ignore the "Source code" files — GitHub
-      attaches those to everything.</li>
-    <li>Start WoW. A <strong>black and purple button appears on your minimap</strong>.
-      Everything is behind it.</li>
-    <li>To appear on the board below: unzip
-      <strong>2-UPLOADER-LevelPace-Companion.zip</strong> anywhere and run
-      <code>LevelPace Companion.bat</code>, then tick
-      <strong>Share to leaderboard</strong> on the minimap menu and type
-      <code>/reload</code>.</li>
+<!-- ========================================================= install -->
+<section class="install">
+  <h2>Three steps</h2>
+  <ol class="flow">
+    <li>
+      <span class="flow-n">1</span>
+      <h4>Unzip the addon</h4>
+      <p><code>1-ADDON-LevelPace.zip</code> into <code>Interface\AddOns</code>.</p>
+      <p class="flow-note">Ignore the "Source code" files. GitHub attaches those to everything.</p>
+    </li>
+    <li>
+      <span class="flow-n">2</span>
+      <h4>Look at your minimap</h4>
+      <p>A <strong>purple button</strong> appears. Everything is behind it.</p>
+      <p class="flow-note">That is the whole interface. Slash commands still work.</p>
+    </li>
+    <li>
+      <span class="flow-n">3</span>
+      <h4>Join the board</h4>
+      <p>Run the companion, tick <strong>Share to leaderboard</strong>, type <code>/reload</code>.</p>
+      <p class="flow-note">Optional. Nothing leaves your computer until you tick it.</p>
+    </li>
   </ol>
-  <p class="aside">Nothing leaves your computer until you tick that box. Your
-  stats upload after you log out or <code>/reload</code> — WoW only writes its
-  saved data at those moments, and no addon can make it happen sooner.</p>
-</div>
+</section>
 
-<nav class="tabs" role="tablist" aria-label="Leaderboards">
-  <button role="tab" class="tab is-active" data-view="levelling" aria-selected="true">Levelling</button>
-  <button role="tab" class="tab" data-view="pvp" aria-selected="false">Battlegrounds</button>
-  <button role="tab" class="tab" data-view="rares" aria-selected="false">Rare hunters</button>
-  <button role="tab" class="tab" data-view="rarelog" aria-selected="false">Rare kill log</button>
-  <div class="tab-tools">
-    <span class="snapshot" id="snapshot" hidden></span>
-    <button class="ghost" id="refresh" title="Reload from the server">refresh</button>
+<!-- ========================================================= board -->
+<section id="board-section">
+  <div class="board-head">
+    <h2>The board</h2>
+    <div class="scale-strip" aria-label="Parse colour scale">
+      <span class="scale-bar" aria-hidden="true"></span>
+      <ol class="scale-ticks">
+        <li style="--c:var(--q-common)">common</li>
+        <li style="--c:var(--q-uncommon)">uncommon</li>
+        <li style="--c:var(--q-rare)">rare</li>
+        <li style="--c:var(--q-epic)">epic</li>
+        <li style="--c:var(--q-legendary)">legendary</li>
+        <li style="--c:var(--q-pink)">astounding</li>
+        <li style="--c:var(--q-artifact)">artifact</li>
+      </ol>
+    </div>
   </div>
-</nav>
 
-<main>
-  <section class="scale" aria-label="Parse colour scale">
-    <span class="scale-label">scale</span>
-    <ol class="scale-bands">
-      <li style="--c:var(--q-common)">0<i>common</i></li>
-      <li style="--c:var(--q-uncommon)">25<i>uncommon</i></li>
-      <li style="--c:var(--q-rare)">50<i>rare</i></li>
-      <li style="--c:var(--q-epic)">75<i>epic</i></li>
-      <li style="--c:var(--q-legendary)">95<i>legendary</i></li>
-      <li style="--c:var(--q-pink)">99<i>astounding</i></li>
-      <li style="--c:var(--q-artifact)">100<i>artifact</i></li>
-    </ol>
-  </section>
+  <nav class="tabs" role="tablist" aria-label="Leaderboards">
+    <button role="tab" class="tab is-active" data-view="levelling" aria-selected="true">Levelling</button>
+    <button role="tab" class="tab" data-view="pvp" aria-selected="false">Battlegrounds</button>
+    <button role="tab" class="tab" data-view="rares" aria-selected="false">Rare hunters</button>
+    <button role="tab" class="tab" data-view="rarelog" aria-selected="false">Kill log</button>
+    <div class="tab-tools">
+      <span class="snapshot" id="snapshot" hidden></span>
+      <button class="ghost" id="refresh" title="Reload from the server">refresh</button>
+    </div>
+  </nav>
 
-  <div id="board" class="board" aria-live="polite"></div>
+  <main>
+    <div id="board" class="board" aria-live="polite"></div>
 
-  <p class="caveat">
-    <strong>This ranks LevelPace users, not the server.</strong>
-    Nobody appears here unless they installed the addon, switched sharing on,
-    and ran the companion. A 100 parse means <em>best among the people on this
-    board</em> — it is not a claim about anyone else. There is no alternative:
-    none of this is recorded server-side, so the data exists only because the
-    addon measured it while someone played.
-  </p>
-  <p class="caveat caveat--warn">
-    <strong>Every number is supplied by the player's own client.</strong>
-    The addon writes a file, the companion sends it. Nothing is verified
-    against the game server, because nothing <em>can</em> be. Impossible values
-    are rejected and nobody can submit under someone else's name, but plausible
-    lies are not detectable. Treat this as a scoreboard among friends, not an
-    audited ranking.
-  </p>
-</main>
+    <div class="caveats">
+      <p class="caveat">
+        <strong>This ranks LevelPace users, not the server.</strong>
+        Nobody appears unless they installed the addon and switched sharing on.
+        A 100 parse means best <em>among the people here</em>. None of this is
+        recorded server-side — it exists only because the addon measured it.
+      </p>
+      <p class="caveat caveat--warn">
+        <strong>Every number comes from the player's own client.</strong>
+        Impossible values are rejected and nobody can submit under someone
+        else's name, but plausible lies are not detectable. A scoreboard among
+        friends, not an audited ranking.
+      </p>
+    </div>
+  </main>
+</section>
 
-<div class="talk">
-  <h2>Something broken? An idea?</h2>
-  <p>Say so at
-  <a href="https://github.com/monscorps/levelpace/issues">github.com/monscorps/levelpace/issues</a>
-  — there are two short forms, one for bugs and one for ideas. Or type
-  <code>/lp feedback</code> in game and the link prints in chat.</p>
-  <p>If it is the uploader misbehaving, right-click its tray icon →
-  <strong>Copy log (for Discord)</strong> and paste that in. It is already
-  formatted, and it is the difference between a fix and a guessing game.
-  <strong>Ideas are as welcome as bugs</strong> — say what you want to know or
-  do, rather than how you think it should work.</p>
-</div>
+<!-- ========================================================= feedback -->
+<section class="talk">
+  <h2>Broken? Got an idea?</h2>
+  <div class="talk-grid">
+    <p><a class="btn btn--quiet" href="https://github.com/monscorps/levelpace/issues">Open an issue &rarr;</a>
+       Two short forms — one for bugs, one for ideas. Or type
+       <code>/lp feedback</code> in game and the link prints in chat.</p>
+    <p class="talk-note">If it is the uploader misbehaving, right-click its tray
+    icon → <strong>Copy log</strong> and paste that in. It is the difference
+    between a fix and a guessing game. <strong>Ideas are as welcome as
+    bugs.</strong></p>
+  </div>
+</section>
 
 <details class="limits">
   <summary>Things it deliberately cannot do</summary>
   <ul>
-    <li><strong>Stats only upload after you log out or <code>/reload</code>.</strong>
-      WoW writes its saved data at those moments and no addon can change that.</li>
+    <li><strong>Stats upload only after you log out or <code>/reload</code>.</strong>
+      WoW writes its saved data at those moments; no addon can change that.</li>
     <li><strong>Enemy guild names are partial.</strong> The game only reveals the
-      guild of someone you have targeted or moused over, so it shows
-      "guilds known: 6 of 15" rather than pretending the rest have none.</li>
+      guild of someone you targeted, so it shows "6 of 15" rather than
+      pretending the rest have none.</li>
     <li><strong>Flag announcements are English only.</strong> 3.3.5a ships no
       translatable text for flag events.</li>
     <li><strong>Battleground win/loss counts from when you installed</strong>, not
-      your whole career. Only honorable kills are genuinely lifetime, because
-      only those come from the server.</li>
-    <li><strong>A match you leave early is not recorded</strong> — the winner is
-      only known when it ends.</li>
-    <li><strong>3.3.5a only.</strong> Retail and the Classic clients changed both
-      the combat log and the GUID format, so it would not merely misbehave
-      there — it would silently record nothing.</li>
+      your whole career. Only honorable kills are genuinely lifetime.</li>
+    <li><strong>3.3.5a only.</strong> Retail and Classic changed both the combat
+      log and the GUID format — it would not misbehave there, it would
+      silently record nothing.</li>
   </ul>
 </details>
 
 <footer>
-  <p>LevelPace · levels per hour, not XP per hour — so a level 20 and a level 78 are compared fairly. ·
-  <a href="https://github.com/monscorps/levelpace">source</a></p>
+  <img src="mark.svg" alt="" width="20" height="20">
+  <p>Levels per hour, not XP per hour — so a level 20 and a level 78 are
+  compared fairly. · <a href="https://github.com/monscorps/levelpace">source</a></p>
 </footer>
 
 <script src="app.js"></script>
