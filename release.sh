@@ -101,5 +101,5 @@ echo
 echo "done. Stable link for everyone:"
 echo "  https://github.com/monscorps/levelpace/releases/latest"
 echo
-echo "Publish the board so clients see the new version number:"
-echo "  ./publish-to-pages.command"
+echo "The web board reads the Worker live; docs/api/version.json was stamped and"
+echo "pushed above, so GitHub Pages picks the new version up by itself."
