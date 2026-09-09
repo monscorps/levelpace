@@ -8,6 +8,19 @@ Works on any 3.3.5a private server. No account, no sign-up, no email.
 
 ---
 
+## Fixed in 0.9.13 — the upload has never worked until now
+
+Every real client hit the same invisible failure: the export called
+`math.randomseed`, which **does not exist inside WoW** (Blizzard removed it;
+the game seeds the RNG itself). That call was the first step of every write,
+so sharing switched on, the game saved it, and **no data was ever produced** —
+silently, because the error was swallowed. It passed every test because
+every test environment *does* have `randomseed`; WoW is the only Lua that
+doesn't.
+
+If you had sharing on before: install this addon zip and `/reload`. Your
+recorded levels upload on the next companion sync. Nothing you did was wrong.
+
 ## Download these two
 
 | File | What it is | Where it goes |

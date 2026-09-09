@@ -277,4 +277,38 @@ h.run("a clean client records no failures", function()
   h.eq(LP.gdb.exportFailures, nil, "nothing degraded")
 end)
 
+-- ==== the bug that broke every real upload since day one ====
+--
+-- newID() called math.randomseed, which WoW does not have. The harness never
+-- noticed because native Lua does. This pins both the fix and the sandbox.
+
+h.run("the harness sandbox has no math.randomseed, like WoW", function()
+  h.eq(math.randomseed, nil, "if this is non-nil the harness is lying about the game")
+end)
+
+h.run("an export id is generated without math.randomseed", function()
+  local LP = boot()
+  local id = LP.Export:EnsureID()
+  h.ok(type(id) == "string" and #id >= 24, "got an id: " .. tostring(id))
+  h.eq(LP.Export:EnsureID(), id, "stable across calls")
+end)
+
+h.run("a fresh account writes a blob AND a clientID on the first share", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  LP.db.history = { { level = 7, elapsed = 300 } }
+  LP.Export:Write()
+  h.ok(LP.gdb.clientID, "clientID written -- this was absent from the real file")
+  h.ok(LP.gdb.exportJSON, "blob written -- this was absent from the real file")
+end)
+
+h.run("Summary never says 'sharing off' when sharing is on", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  LP.gdb.export = {}   -- sharing on, but no blob (a failed write)
+  local s = LP.Export:Summary()
+  h.ok(not string.find(s, "^sharing off"), "must not lie: " .. s)
+  h.ok(string.find(s, "ON"), "says it is on")
+end)
+
 os.exit(h.report() and 0 or 1)

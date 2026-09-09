@@ -23,16 +23,30 @@ Export.SCHEMA = 2
 -- so the server can update a character's record instead of duplicating it --
 -- not to identify a person.
 local function newID()
-  -- No os.time and no uuid library here; time() plus math.random is enough
-  -- for a collision-free-in-practice key.
-  math.randomseed((time and time() or 0) + math.floor((GetTime and GetTime() or 0) * 1000))
+  -- NO math.randomseed. It does not exist inside WoW -- Blizzard removed it
+  -- and seeds the RNG itself at startup. Calling it throws
+  -- "attempt to call field 'randomseed' (a nil value)", and because this ran
+  -- as the FIRST step of every export, no blob was ever written on a real
+  -- client. Ever. The bus swallowed the error, so it looked like sharing was
+  -- on and simply nothing happened. It stayed hidden because LuaJIT and stock
+  -- Lua 5.1 -- both test environments -- DO provide randomseed; WoW is the
+  -- only Lua that does not.
+  --
+  -- math.random is already seeded by the client. Mix in wall clock and
+  -- session uptime so two characters created in the same second still get
+  -- distinct keys. This id is pseudonymous and the server does not even use
+  -- it for identity (char_id is derived from name@realm), so it only needs
+  -- to be unique-in-practice, not cryptographic.
   local hex = "0123456789abcdef"
   local out = {}
-  for i = 1, 32 do
-    local n = math.random(1, 16)
+  local rnd = math.random
+  for i = 1, 24 do
+    local n = rnd(1, 16)
     out[i] = string.sub(hex, n, n)
   end
-  return table.concat(out)
+  local t = math.floor((time and time() or 0) + ((GetTime and GetTime() or 0) * 1000))
+  if t < 0 then t = -t end
+  return table.concat(out) .. string.format("%08x", t % 0x7fffffff)
 end
 
 function Export:EnsureID()
@@ -118,7 +132,10 @@ function Export:Write()
   local blob = {
     schema = self.SCHEMA,
     addon = LP.VERSION,
-    id = self:EnsureID(),
+    -- Isolated: the server derives identity from name@realm and ignores this,
+    -- so it is an enrichment, and an enrichment must never sink the blob. It
+    -- already did once -- see newID.
+    id = opt("id", function() return self:EnsureID() end),
     -- IDENTITY, always sent, never displayed unless asked for. The server
     -- derives char_id from name@realm, and realm cannot be optional or two
     -- players genuinely named the same lose their collision protection.
@@ -278,7 +295,17 @@ end
 
 function Export:Summary()
   local blob = LP.gdb and LP.gdb.export and LP.gdb.export[(charKey())]
-  if not blob then return "sharing off" end
+  if not blob then
+    -- Say the true thing. This used to print "sharing off" whenever there
+    -- was no blob, which is also what a FAILED write looks like -- so a
+    -- player with sharing on and a crashing export was told they had never
+    -- turned it on, and went looking for a checkbox instead of a bug.
+    if self:Enabled() then
+      return "sharing is ON but nothing has been written yet -- /reload, and if this persists it is a bug (" ..
+             (LP.gdb.exportFailures or "no failure recorded") .. ")"
+    end
+    return "sharing off"
+  end
   local msg = string.format("%d completed level%s ready to upload",
     #blob.levels, #blob.levels == 1 and "" or "s")
   -- If an optional enrichment was dropped on this client, say so here rather

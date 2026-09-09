@@ -76,6 +76,17 @@ end
 harness.stubFrame = stubFrame
 
 local function installGlobals()
+  -- Make the sandbox as strict as WoW's, not as permissive as native Lua.
+  --
+  -- WoW REMOVES parts of the standard library. math.randomseed is the one
+  -- that mattered: it exists in LuaJIT and stock Lua 5.1 -- every test
+  -- environment -- and not in the game. Export called it as the first step
+  -- of every write, so on a real client no blob was ever produced, while
+  -- every test here passed for weeks. Anything the game does not provide
+  -- must be nil here too, so a call to it fails in tests before it fails
+  -- for a player.
+  math.randomseed = nil
+  _G.loadstring = _G.loadstring   -- WoW keeps loadstring; listed for the record
   -- GetTime() is seconds since the client started: it RESTARTS AT ZERO every
   -- session. time() is a unix timestamp: wall clock, monotonic across
   -- sessions. Conflating them is not academic -- persisting a GetTime() value
