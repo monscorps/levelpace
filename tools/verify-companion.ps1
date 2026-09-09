@@ -88,6 +88,7 @@ foreach ($needle in @('NotifyIcon', 'Application]::Run', 'ContextMenuStrip')) {
 # the point: it must reach THAT line and fail there, not somewhere earlier. If
 # it dies before Windows Forms, something is wrong that would also be wrong on
 # Windows.
+$tmp2 = Join-Path ([IO.Path]::GetTempPath()) ("lp-fn-" + [guid]::NewGuid().ToString("N"))
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("lp-verify-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $payloadFile = Join-Path $tmp 'payload.ps1'
@@ -152,6 +153,66 @@ if ($out -match 'REACHED_END') {
     ($out -split "`n") | Select-Object -First 4 | ForEach-Object { Write-Host ("  " + $_.TrimEnd()) }
     exit 1
 }
+
+# 8. Call the functions the tray app calls at startup.
+#
+# Everything above stops at the first Windows-only line, so nothing after the
+# tray icon was ever exercised -- and that is precisely where the app died:
+# the startup Invoke-Sync threw AFTER the icon existed, so it appeared and
+# vanished with no error anywhere.
+#
+# The functions are all defined before the Windows-only section, so they can
+# be loaded and called here. This runs them in the worst honest case: no WoW
+# installed, no addon, no network. Startup must survive all of it.
+$fnPart = $payload.Substring(0, $payload.IndexOf('$icon = New-Object System.Windows.Forms.NotifyIcon'))
+$fnFile = Join-Path $tmp2 'functions.ps1'
+New-Item -ItemType Directory -Force -Path $tmp2 | Out-Null
+[IO.File]::WriteAllText($fnFile, $fnPart)
+
+$callSrc = @"
+`$env:LEVELPACE_BAT = '$((Resolve-Path $Bat).Path)'
+`$env:LOCALAPPDATA  = '$tmp2'
+`$env:TEMP          = '$tmp2'
+try {
+    . '$fnFile'
+} catch {
+    Write-Output ('LOAD_FAILED::' + `$_.Exception.Message)
+    exit
+}
+foreach (`$fn in @('Invoke-Sync','Find-WowRoots','Find-SavedVariables','Find-AddonDir','Get-Config')) {
+    if (-not (Get-Command `$fn -ErrorAction SilentlyContinue)) {
+        Write-Output ('MISSING::' + `$fn); continue
+    }
+    try { `$null = & `$fn } catch { Write-Output ('THREW::' + `$fn + '::' + `$_.Exception.Message) }
+}
+Write-Output 'FUNCS_OK'
+"@
+$callFile = Join-Path $tmp2 'call.ps1'
+[IO.File]::WriteAllText($callFile, $callSrc)
+$fnOut = & $pwshPath -NoProfile -File $callFile 2>&1 | Out-String
+Remove-Item -Recurse -Force $tmp2 -ErrorAction SilentlyContinue
+
+if ($fnOut -match 'LOAD_FAILED::(.+)') {
+    Write-Host "the companion's functions do not even load:"
+    Write-Host ("  " + $Matches[1].Trim()); exit 1
+}
+if ($fnOut -match 'MISSING::(\S+)') {
+    Write-Host ("startup calls a function that does not exist: " + $Matches[1]); exit 1
+}
+if ($fnOut -match 'THREW::([^:]+)::(.+)') {
+    # This is the whole point. A throw here kills the tray app AFTER its icon
+    # is visible, which is indistinguishable from "it will not stay open".
+    Write-Host ("{0} throws on a machine with no WoW, no addon and no network:" -f $Matches[1])
+    Write-Host ("  " + $Matches[2].Trim())
+    Write-Host "  That would kill the tray app at startup."
+    exit 1
+}
+if ($fnOut -notmatch 'FUNCS_OK') {
+    Write-Host "could not exercise the startup functions:"
+    ($fnOut -split "`n") | Select-Object -First 4 | ForEach-Object { Write-Host ("  " + $_.TrimEnd()) }
+    exit 1
+}
+Write-Host "  (startup functions survive a machine with no WoW, no addon, no network)"
 
 Write-Host "companion weld OK (payload extracts, parses, runs to the Windows-only tray code)"
 exit 0

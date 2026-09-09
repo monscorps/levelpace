@@ -47,6 +47,24 @@ try {
 # Logging
 # ---------------------------------------------------------------------------
 
+# Run something that must never take the app down with it.
+#
+# This exists because it already did. $ErrorActionPreference is 'Stop', the
+# startup sync was called bare, and one throw inside it killed the process
+# AFTER the tray icon had appeared -- so the icon flashed up and vanished with
+# no window, no error and nothing in the log. A tray app must survive every
+# background failure it can possibly have; the worst acceptable outcome is a
+# status line saying something went wrong.
+function Invoke-Safe([scriptblock] $work, [string] $what) {
+    try {
+        & $work
+    } catch {
+        $msg = $_.Exception.Message
+        try { Write-Log ("{0} failed: {1}" -f $what, $msg) } catch { }
+        try { $script:LastStatus = "$what failed - see log" } catch { }
+    }
+}
+
 function Write-Log([string]$msg) {
     try {
         $dir = Split-Path -Parent $LogPath
@@ -228,37 +246,69 @@ function Find-WowRoots {
     $saved = Get-SavedWowRoot
     if ($saved) { return @($saved) }
 
+    # Every path expression here can produce null or empty, and Join-Path
+    # THROWS on those rather than returning nothing. That is not theoretical:
+    # unzip the companion at C:\LevelPace and
+    # `Split-Path -Parent (Split-Path -Parent $Root)` is empty, which killed
+    # the whole tray app at startup with no error anywhere.
+    #
+    # So the list is BUILT defensively rather than trusted.
     $names = @('World of Warcraft', 'WoW', 'Wrath', 'WoW 3.3.5a', 'WoW335',
                'Wrath of the Lich King', 'Warmane', 'WotLK')
-    $bases = @('C:\', 'D:\', 'E:\', 'C:\Games', 'D:\Games',
-               'C:\Program Files (x86)', 'C:\Program Files',
-               $env:USERPROFILE,
-               (Join-Path $env:USERPROFILE 'Desktop'),
-               (Join-Path $env:USERPROFILE 'Downloads'),
-               (Join-Path $env:USERPROFILE 'Games'),
-               (Split-Path -Parent $Root),
-               (Split-Path -Parent (Split-Path -Parent $Root)))
 
-    $found = @()
+    $bases = New-Object Collections.Generic.List[string]
+    $add = {
+        param($v)
+        if (-not [string]::IsNullOrWhiteSpace($v)) { [void]$bases.Add($v) }
+    }
+    foreach ($fixed in @('C:\', 'D:\', 'E:\', 'C:\Games', 'D:\Games',
+                         'C:\Program Files (x86)', 'C:\Program Files')) {
+        & $add $fixed
+    }
+    & $add $env:USERPROFILE
+    foreach ($sub in @('Desktop', 'Downloads', 'Games')) {
+        if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+            try { & $add (Join-Path $env:USERPROFILE $sub) } catch { }
+        }
+    }
+    # Where the companion itself was unzipped, and one level above.
+    $up = $Root
+    for ($i = 0; $i -lt 2; $i++) {
+        if ([string]::IsNullOrWhiteSpace($up)) { break }
+        & $add $up
+        try { $up = Split-Path -Parent $up } catch { break }
+    }
+
+    $found = New-Object Collections.Generic.List[string]
+    $isWow = {
+        param($dir)
+        if ([string]::IsNullOrWhiteSpace($dir)) { return $false }
+        try { return (Test-Path (Join-Path $dir 'WTF\Account')) } catch { return $false }
+    }
+
     foreach ($b in $bases) {
-        if (-not $b) { continue }
-        # The base itself might BE the install (the .bat unzipped inside it).
-        if (Test-Path (Join-Path $b 'WTF\Account')) { $found += $b; continue }
+        if (& $isWow $b) { [void]$found.Add($b); continue }
         foreach ($n in $names) {
-            $c = Join-Path $b $n
-            if (Test-Path (Join-Path $c 'WTF\Account')) { $found += $c }
+            try {
+                $c = Join-Path $b $n
+                if (& $isWow $c) { [void]$found.Add($c) }
+            } catch { }
         }
     }
 
-    # Still nothing: one shallow sweep of each drive root. Deliberately one
-    # level only -- walking whole disks on a timer is how an uploader becomes
-    # the reason someone's machine is slow.
+    # Still nothing: one shallow sweep of each drive root. One level only --
+    # walking whole disks on a timer is how an uploader becomes the reason
+    # someone's machine is slow.
     if ($found.Count -eq 0) {
-        foreach ($d in (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
-            foreach ($sub in (Get-ChildItem $d.Root -Directory -ErrorAction SilentlyContinue)) {
-                if (Test-Path (Join-Path $sub.FullName 'WTF\Account')) { $found += $sub.FullName }
+        try {
+            foreach ($d in (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
+                try {
+                    foreach ($sub in (Get-ChildItem $d.Root -Directory -ErrorAction SilentlyContinue)) {
+                        if (& $isWow $sub.FullName) { [void]$found.Add($sub.FullName) }
+                    }
+                } catch { }
             }
-        }
+        } catch { }
     }
     return ($found | Select-Object -Unique)
 }
@@ -538,7 +588,7 @@ $miStatus.Enabled = $false
 
 $miNow = $menu.Items.Add('Upload now')
 $miNow.Add_Click({
-    Invoke-Sync
+    Invoke-Safe { Invoke-Sync } 'upload'
     $icon.ShowBalloonTip(4000, 'LevelPace', $script:LastStatus,
         [System.Windows.Forms.ToolTipIcon]::Info)
 })
@@ -632,7 +682,7 @@ $miQuit.Add_Click({
 
 $icon.ContextMenuStrip = $menu
 $icon.Add_MouseDoubleClick({
-    Invoke-Sync
+    Invoke-Safe { Invoke-Sync } 'upload'
     $icon.ShowBalloonTip(4000, 'LevelPace', $script:LastStatus,
         [System.Windows.Forms.ToolTipIcon]::Info)
 })
@@ -645,6 +695,7 @@ $icon.Add_MouseDoubleClick({
 
 $script:PendingAt = $null
 $watchers = @()
+Invoke-Safe {
 foreach ($f in (Find-SavedVariables)) {
     $dir = Split-Path -Parent $f
     $w = New-Object IO.FileSystemWatcher $dir, 'LevelPace.lua'
@@ -654,6 +705,7 @@ foreach ($f in (Find-SavedVariables)) {
     $watchers += $w
     Write-Log "watching $f"
 }
+} 'file watcher setup'
 if ($watchers.Count -eq 0) {
     Write-Log "no LevelPace.lua found yet -- will keep looking"
 }
@@ -662,6 +714,7 @@ if ($watchers.Count -eq 0) {
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 5000
 $timer.Add_Tick({
+  Invoke-Safe {
     # Debounce: wait for the file to settle before reading it.
     if ($script:PendingAt -and ((Get-Date) - $script:PendingAt).TotalSeconds -ge 3) {
         $script:PendingAt = $null
@@ -675,14 +728,23 @@ $timer.Add_Tick({
     $t = "LevelPace - $($script:LastStatus)"
     if ($t.Length -gt 62) { $t = $t.Substring(0, 62) }
     $icon.Text = $t
+  } 'timer tick'
 })
 $timer.Start()
 
 # One sync at startup so the board is current the moment it launches.
-Invoke-Sync
-$icon.ShowBalloonTip(5000, 'LevelPace is running',
-    'It will upload by itself when you log out of WoW. Right-click the icon to quit.',
-    [System.Windows.Forms.ToolTipIcon]::Info)
+#
+# Guarded, because this line used to kill the app. It runs network calls, file
+# scans and a drive sweep, any of which can fail on a machine we have never
+# seen -- and failing here, after the icon exists but before the message loop
+# starts, looks exactly like "it will not stay open".
+Invoke-Safe { Invoke-Sync } 'startup sync'
+
+Invoke-Safe {
+    $icon.ShowBalloonTip(5000, 'LevelPace is running',
+        'It will upload by itself when you log out of WoW. Right-click the icon to quit.',
+        [System.Windows.Forms.ToolTipIcon]::Info)
+} 'startup notification'
 
 [System.Windows.Forms.Application]::Run()
 
