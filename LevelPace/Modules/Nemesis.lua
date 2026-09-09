@@ -59,11 +59,15 @@ end
 local currentStreak = 0
 local roster = {}       -- name -> misses since last seen
 local seenRoster = false
+local matchRecorded = false   -- this match's result already written
 
 function N:Init()
   currentStreak = 0
   roster = {}
   seenRoster = false
+  -- A match that is already over when we arrive -- a /reload on the final
+  -- scoreboard, or joining late -- was not watched, so it is not counted.
+  matchRecorded = (GetBattlefieldWinner and GetBattlefieldWinner() ~= nil) or false
   db()
 end
 
@@ -367,6 +371,49 @@ function N:RecordResult(bgID, won)
   end
 end
 
+-- Numbers only: the live ranking carries colour tables, which have no
+-- business in SavedVariables. The band is recomputed from pct on display.
+local function slim(r)
+  if not r then return nil end
+  return { value = r.value, pct = r.pct, place = r.place, of = r.of,
+           participating = r.participating }
+end
+
+-- The end of a match, read the way Blizzard's own scoreboard reads it
+-- (WorldStateFrame.lua:513): GetBattlefieldWinner() is nil until there is a
+-- victor, then 0 for Horde and 1 for Alliance -- and it stays set on every
+-- UPDATE_BATTLEFIELD_SCORE until you leave, so this must record exactly once.
+-- Nothing called RecordResult before this existed: a player who won a match
+-- saw "0W 0L since install" forever.
+function N:CheckWinner()
+  if matchRecorded or not GetBattlefieldWinner then return nil end
+  local winner = GetBattlefieldWinner()
+  if winner == nil then return nil end
+  if IsActiveBattlefieldArena and IsActiveBattlefieldArena() then return nil end
+  local mine = UnitFactionGroup and UnitFactionGroup("player")
+  if not mine then return nil end
+  matchRecorded = true
+  local won = (winner == 1 and mine == "Alliance") or (winner == 0 and mine == "Horde")
+  local bg = (GetRealZoneText and GetRealZoneText()) or "unknown"
+  self:RecordResult(bg, won)
+  -- Keep the final standing. The live meters vanish with the scoreboard the
+  -- moment you leave, and a healer's whole match is in them.
+  local d = db()
+  local ranking = self:TeamRanking()
+  if d then
+    d.lastMatch = {
+      bg = bg, won = won, at = (time and time()) or 0,
+      ranking = ranking and {
+        teamSize = ranking.teamSize,
+        damage = slim(ranking.damage), healing = slim(ranking.healing),
+        kills = slim(ranking.kills),
+      } or nil,
+    }
+  end
+  LP:Fire("BG_RESULT", bg, won)
+  return won
+end
+
 function N:Lifetime()
   local d = db()
   local hk = 0
@@ -470,6 +517,39 @@ function N:Payload()
   return out
 end
 
+-- The two meters a match is judged by, from the live scoreboard or from the
+-- saved final standing. Saved copies carry no band, so it is recomputed.
+local function standingRows(rows, r, live)
+  local function bandOf(x)
+    return x.band or (x.pct and LP.data and LP.data.BandFor and LP.data.BandFor(x.pct)) or nil
+  end
+  local d = r.damage
+  if d then
+    rows[#rows + 1] = {
+      kind = "meter", label = "Damage", pct = d.pct, band = bandOf(d),
+      value = LP.util.FormatNumber(d.value),
+      note = d.pct and string.format("%d of %d", d.place, d.of)
+             or "no one to compare against",
+    }
+  end
+  local hl = r.healing
+  if hl then
+    if hl.participating then
+      rows[#rows + 1] = {
+        kind = "meter", label = "Healing", pct = hl.pct, band = bandOf(hl),
+        value = LP.util.FormatNumber(hl.value),
+        note = hl.pct and string.format("%d of %d healers", hl.place, hl.of)
+               or (live and "only healer so far" or "the only healer"),
+      }
+    else
+      -- Ranking a rogue's zero healing against a team of zeroes would look
+      -- like information and be none. Say why the bar is absent instead.
+      rows[#rows + 1] = { kind = "stat", label = "Healing", value = "--",
+        note = "not healing this match" }
+    end
+  end
+end
+
 function N:Dashboard()
   local s = self:Lifetime()
   local rows = {}
@@ -479,32 +559,17 @@ function N:Dashboard()
   local live = self:TeamRanking()
   if live then
     rows[#rows + 1] = { kind = "header", text = "This battleground" }
-
-    local d = live.damage
-    if d then
-      rows[#rows + 1] = {
-        kind = "meter", label = "Damage", pct = d.pct, band = d.band,
-        value = LP.util.FormatNumber(d.value),
-        note = d.pct and string.format("%d of %d", d.place, d.of)
-               or "no one to compare against",
-      }
-    end
-
-    local hl = live.healing
-    if hl then
-      if hl.participating then
-        rows[#rows + 1] = {
-          kind = "meter", label = "Healing", pct = hl.pct, band = hl.band,
-          value = LP.util.FormatNumber(hl.value),
-          note = hl.pct and string.format("%d of %d healers", hl.place, hl.of)
-                 or "only healer so far",
-        }
-      else
-        -- Ranking a rogue's zero healing against a team of zeroes would look
-        -- like information and be none. Say why the bar is absent instead.
-        rows[#rows + 1] = { kind = "stat", label = "Healing", value = "--",
-          note = "not healing this match" }
-      end
+    standingRows(rows, live, true)
+  else
+    -- The scoreboard, and the live meters with it, is gone the moment you
+    -- leave. The final standing was saved when the match ended.
+    local d = db()
+    local last = d and d.lastMatch
+    if last and last.ranking then
+      rows[#rows + 1] = { kind = "header",
+        text = "Last battleground: " .. tostring(last.bg or "?")
+               .. (last.won and " -- won" or " -- lost") }
+      standingRows(rows, last.ranking, false)
     end
   end
 
@@ -622,6 +687,11 @@ LP:RegisterModule({
 
     LP:RegisterEvent("PLAYER_ENTERING_BATTLEGROUND", "nemesis", function()
       N:Init()
+    end)
+    -- The scoreboard refresh is where the winner appears. The poll above
+    -- requests one every few seconds, so this fires throughout a match.
+    LP:RegisterEvent("UPDATE_BATTLEFIELD_SCORE", "nemesis", function()
+      N:CheckWinner()
     end)
 
     -- Arenas share the scoreboard API but not the point of any of this.

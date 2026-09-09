@@ -8,6 +8,16 @@ Works on any 3.3.5a private server. No account, no sign-up, no email.
 
 ---
 
+## Fixed in 0.9.17 — battleground wins and losses were never counted
+
+The dashboard's **Record: 0W 0L (since install)** stayed at zero no matter how
+many matches you played: nothing in the game ever told it a match had ended.
+It now reads the winner the way the game's own scoreboard does, records each
+match once, and — because the live damage/healing meters disappear the moment
+you leave a battleground — keeps your **final standing** (damage, healing,
+your place among the team's healers) as a *Last battleground* section until
+the next match. Only the addon zip changed; the companion is the same.
+
 ## Fixed in 0.9.16 — real data is on the board; two companion errors gone
 
 The first uploads from a real client have landed: a character's levels are on

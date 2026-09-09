@@ -475,4 +475,94 @@ h.run("a death is attributed to the last player who hit you", function()
   h.eq(N.lastAttacker, nil, "consumed after the death")
 end)
 
+-- ==== the result must come from the game, not only from tests ====
+--
+-- RecordResult had no caller outside this file. A player who won a match saw
+-- "0W 0L since install" forever. The winner is read the way Blizzard's own
+-- scoreboard reads it (WorldStateFrame.lua:513): GetBattlefieldWinner() is
+-- nil until there is a victor, then 0 for Horde and 1 for Alliance.
+
+local function bgEvent(LP, ev)
+  LP.eventFrame.scripts.OnEvent(LP.eventFrame, ev)
+end
+
+h.run("a finished match records a win for the winning faction, exactly once", function()
+  h.state.bgWinner = nil
+  local LP, N = load()
+  h.state.zone = "Warsong Gulch"
+  team({ { "Me", 500, 12000 }, { "Mate1", 100, 0 }, { "Mate2", 300, 8000 } })
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+  local s = N:Lifetime()
+  h.eq(s.wins + s.losses, 0, "nothing recorded while the match is running")
+
+  h.state.bgWinner = 1                      -- Alliance wins; we are Alliance
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")   -- the board keeps refreshing after the win
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+  s = N:Lifetime()
+  h.eq(s.wins, 1, "one win, not three")
+  h.eq(s.losses, 0, "no loss")
+  h.eq(s.byBG["Warsong Gulch"].wins, 1, "keyed by the battleground's name")
+end)
+
+h.run("the other faction's win is our loss", function()
+  h.state.bgWinner = nil
+  local LP, N = load()
+  h.state.faction = "Horde"
+  h.state.zone = "Arathi Basin"
+  h.state.bgScores = { { name = "Me", faction = 0, damageDone = 10 } }
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  h.state.bgWinner = 1
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+  local s = N:Lifetime()
+  h.eq(s.losses, 1, "Alliance won, we are Horde")
+  h.eq(s.wins, 0, "not a win")
+  h.state.faction = "Alliance"
+end)
+
+h.run("a match already over when we arrive is not counted", function()
+  -- /reload on the final scoreboard, or joining late: we did not watch it.
+  h.state.bgWinner = 1
+  local LP, N = load()
+  team({ { "Me", 500, 0 } })
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+  local s = N:Lifetime()
+  h.eq(s.wins + s.losses, 0, "not ours to count")
+  h.state.bgWinner = nil
+end)
+
+h.run("the final standing survives leaving the battleground", function()
+  h.state.bgWinner = nil
+  local LP, N = load()
+  h.state.zone = "Warsong Gulch"
+  team({ { "Me", 500, 12000 }, { "Mate1", 100, 0 }, { "Mate2", 300, 8000 } })
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  h.state.bgWinner = 1
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+
+  -- Leave: the scoreboard is gone, and so is the live ranking.
+  h.state.bgScores = {}
+  h.eq(N:TeamRanking(), nil, "no live standing after leaving")
+
+  local rows = N:Dashboard()
+  local header, healing = nil, nil
+  for _, r in ipairs(rows) do
+    if r.kind == "header" and r.text:find("^Last battleground") then header = r end
+    if r.kind == "meter" and r.label == "Healing" then healing = r end
+  end
+  h.ok(header, "a 'Last battleground' section replaces the live one")
+  h.eq(header.text, "Last battleground: Warsong Gulch -- won", "names the match and the result")
+  h.ok(healing, "the healing meter is still there")
+  h.eq(healing.value, "12,000", "my healing")
+  h.eq(healing.pct, 100, "top healer of two, n-1 percentile")
+  h.eq(healing.note, "1 of 2 healers", "measured against healers only")
+  h.ok(healing.band, "band recomputed for display")
+
+  local saved = LP.db.nemesis.lastMatch
+  h.eq(saved.ranking.healing.band, nil, "no colour tables in saved variables")
+  h.eq(saved.won, true, "result saved")
+  h.state.bgWinner = nil
+end)
+
 os.exit(h.report() and 0 or 1)
