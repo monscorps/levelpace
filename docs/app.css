@@ -295,3 +295,79 @@ footer p { margin: 0; color: var(--text-faint); font-size: .72rem; }
   .row { animation: none; }
   .row::before { transition: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   Board tables.
+   The previous build rendered its own markup with different class names; these
+   are the ones app.js now emits. Kept in the same palette so nothing about the
+   page reads as a different site.
+   --------------------------------------------------------------------------- */
+
+.ranktable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+}
+.ranktable th {
+  text-align: left;
+  font-weight: 400;
+  font-size: .68rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 0 .75rem .6rem;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.ranktable td {
+  padding: .7rem .75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
+  vertical-align: middle;
+}
+.ranktable tbody tr:hover td { background: #ffffff05; }
+.ranktable .r, .ranktable th.r { text-align: right; }
+.ranktable .rank { color: var(--text-faint); width: 2.4rem; }
+.ranktable .who { font-weight: 600; color: var(--text); }
+.ranktable .realm { color: var(--text-faint); font-size: .78rem; }
+.ranktable .band { text-transform: uppercase; letter-spacing: .1em; font-size: .7rem; }
+
+/* Length is share of the leader; colour is the percentile band. Two different
+   questions, deliberately not merged into one signal. */
+.barcell { width: 34%; min-width: 90px; }
+.bar {
+  display: block;
+  position: relative;
+  height: 5px;
+  border-radius: 3px;
+  background: #ffffff0e;
+  overflow: hidden;
+}
+.bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  border-radius: 3px;
+}
+
+.empty-board {
+  border: 1px dashed var(--rule);
+  padding: 1.6rem 1.4rem;
+  color: var(--text-dim);
+  background: #ffffff03;
+  line-height: 1.7;
+}
+.empty-board p { margin: 0 0 .6rem; }
+.empty-board p:last-child { margin-bottom: 0; }
+.empty-board strong { color: var(--text); }
+.empty-board code {
+  background: #ffffff0a;
+  border: 1px solid var(--rule);
+  padding: .05rem .35rem;
+  border-radius: 3px;
+  color: var(--frost);
+}
+
+@media (max-width: 640px) {
+  .barcell { display: none; }
+  .ranktable th:nth-child(3) { display: none; }
+}

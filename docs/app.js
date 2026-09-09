@@ -1,376 +1,222 @@
-/* LevelPace leaderboard — no framework, no build step. */
+/* LevelPace leaderboard — no framework, no build step.
+ *
+ * This used to read static JSON files published by a Python server running on
+ * a Mac at home. That server is retired, so those files stopped updating and
+ * the board was permanently frozen at zero while looking perfectly healthy.
+ * It now reads the live API directly; CORS is open on it for exactly this.
+ *
+ * The upload address is looked up from api/config.json rather than hardcoded,
+ * so moving the API again does not require editing this file or asking anyone
+ * to re-download anything.
+ */
 
 (function () {
   "use strict";
 
-  // WarcraftLogs bands. Kept in lockstep with Parse.BANDS in the addon and
-  // with the CSS custom properties; changing one means changing all three.
-  var BANDS = [
-    { min: 100, css: "var(--q-artifact)",  name: "artifact"  },
-    { min: 99,  css: "var(--q-pink)",      name: "astounding"},
-    { min: 95,  css: "var(--q-legendary)", name: "legendary" },
-    { min: 75,  css: "var(--q-epic)",      name: "epic"      },
-    { min: 50,  css: "var(--q-rare)",      name: "rare"      },
-    { min: 25,  css: "var(--q-uncommon)",  name: "uncommon"  },
-    { min: 0,   css: "var(--q-common)",    name: "common"    }
-  ];
+  var FALLBACK_API = "https://levelpace.andustemme.workers.dev";
+  var api = null;
 
-  function band(pct) {
-    if (pct === null || pct === undefined) return { css: "var(--q-common)", name: "unranked" };
-    for (var i = 0; i < BANDS.length; i++) if (pct >= BANDS[i].min) return BANDS[i];
-    return BANDS[BANDS.length - 1];
+  var BANDS = ["grey", "green", "blue", "purple", "orange", "pink", "gold"];
+  var BAND_VAR = {
+    grey: "--q-common", green: "--q-uncommon", blue: "--q-rare",
+    purple: "--q-epic", orange: "--q-legendary", pink: "--q-pink",
+    gold: "--q-artifact"
+  };
+
+  var view = "levelling";
+  var cache = {};
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
-  var boardEl = document.getElementById("board");
-  var state = { view: "overall", level: null };
-
-  // ---- helpers -------------------------------------------------------------
-
-  function el(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text !== undefined && text !== null) n.textContent = text;
-    return n;
+  function num(n) {
+    if (n == null) return "—";
+    return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
 
-  function fmt(n, dp) {
-    if (n === null || n === undefined || isNaN(n)) return "—";
-    return Number(n).toLocaleString(undefined, {
-      minimumFractionDigits: dp || 0, maximumFractionDigits: dp || 0
-    });
+  function bandColour(band) {
+    var v = BAND_VAR[band] || "--q-common";
+    return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#6c6f75";
   }
 
-  function minutes(m) {
-    if (m === null || m === undefined) return "—";
-    if (m < 60) return Math.round(m) + "m";
-    return Math.floor(m / 60) + "h " + Math.round(m % 60) + "m";
+  function live(ok, text) {
+    var d = $("dot"), t = $("livetext");
+    if (d) d.className = "livedot " + (ok ? "ok" : "bad");
+    if (t) t.textContent = text;
   }
 
-  // Static mode: the same page is served two ways.
-  //
-  //   live   -- by levelpace_server.py, which answers /api/* directly
-  //   Pages  -- as flat files, where there is no server to answer anything
-  //
-  // The publisher injects window.LEVELPACE_STATIC and writes the same
-  // responses out as .json files, so the only thing that changes is how a
-  // path is resolved. A query string becomes part of the filename, because
-  // GitHub Pages cannot vary a response on one.
-  var STATIC = (typeof window !== "undefined" && window.LEVELPACE_STATIC === true);
-
-  function resolve(path) {
-    if (!STATIC) return path;
-    var q = path.indexOf("?");
-    var base = q === -1 ? path : path.slice(0, q);
-    var query = q === -1 ? "" : path.slice(q + 1);
-    var name = base.replace(/^\/api\//, "");
-    var m = /(?:^|&)level=(\d+)/.exec(query);
-    if (m) name = "level-" + m[1];
-    return "api/" + name + ".json";
-  }
-
-  function api(path) {
-    return fetch(resolve(path), { headers: { "Accept": "application/json" } })
+  function getJSON(url) {
+    return fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" })
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        if (!r.ok) throw new Error(r.status + " from " + url);
         return r.json();
       });
   }
 
-  // ---- rendering -----------------------------------------------------------
-
-  function header(cols) {
-    var row = el("div", "row head");
-    row.style.setProperty("--cols", cols.length);
-    row.appendChild(el("div", "rank", "#"));
-    row.appendChild(el("div", "who", "player"));
-    cols.forEach(function (c) {
-      row.appendChild(el("div", "num " + (c.cls || ""), c.label));
-    });
-    return row;
+  // The API address lives beside the board so it can move without a redeploy.
+  function resolveApi() {
+    if (api) return Promise.resolve(api);
+    return getJSON("api/config.json")
+      .then(function (c) { api = (c && c.uploadUrl) || FALLBACK_API; return api; })
+      .catch(function () { api = FALLBACK_API; return api; });
   }
 
-  // Flags mean "a human should look at this", never "this is a cheater".
-  // Shown rather than hidden, because quietly dropping entries would make the
-  // board look clean while telling nobody anything.
-  var FLAG_TEXT = {
-    "pace": "implausibly fast",
-    "rewritten": "elapsed time was edited after the level was recorded",
-    "kills-without-xp": "kills recorded but no kill XP",
-    "xp-without-kills": "kill XP recorded but no kills",
-    "quests-without-xp": "quests recorded but no quest XP",
-    "no-xp": "no XP recorded at all",
-    "kill-rate": "more kills than seconds in the level",
-    "corpse-exceeds-level": "corpse-run time longer than the level",
-    "corpse-without-death": "corpse-run time with no deaths"
+  function call(path) {
+    return resolveApi().then(function (base) {
+      return getJSON(base.replace(/\/+$/, "") + path);
+    });
+  }
+
+  // ---- rendering ----------------------------------------------------------
+
+  function emptyState(what) {
+    return '<div class="empty-board">' +
+      "<p><strong>Nobody is on this board yet.</strong> " + esc(what) + "</p>" +
+      "<p>To be the first: install the addon, tick <em>Share to leaderboard</em> " +
+      "on the minimap menu, type <code>/reload</code>, and run the companion.</p>" +
+      "</div>";
+  }
+
+  function renderBoard(entries, valueLabel, emptyWhat) {
+    if (!entries || !entries.length) return emptyState(emptyWhat);
+    var top = entries[0].metric || 0;
+    var rows = entries.map(function (e, i) {
+      var pct = e.percentile;
+      var colour = bandColour(e.band);
+      var fill = top > 0 ? Math.max(2, (e.metric / top) * 100) : 0;
+      return '<tr>' +
+        '<td class="rank">' + (i + 1) + "</td>" +
+        "<td><span class=\"who\">" + esc(e.name) + "</span>" +
+          (e.realm ? ' <span class="realm">' + esc(e.realm) + "</span>" : "") +
+          (e.level ? ' <span class="realm">lvl ' + esc(e.level) + "</span>" : "") +
+        "</td>" +
+        '<td class="barcell"><span class="bar"><i style="width:' + fill +
+          "%;background:" + colour + '"></i></span></td>' +
+        '<td class="r">' + num(e.metric) + "</td>" +
+        '<td class="r" style="color:' + colour + '">' +
+          (pct == null ? "—" : Math.round(pct) + "%") + "</td>" +
+        '<td class="r band" style="color:' + colour + '">' + esc(e.band || "—") + "</td>" +
+        "</tr>";
+    }).join("");
+
+    return '<table class="ranktable"><thead><tr>' +
+      '<th class="rank">#</th><th>Player</th><th>Standing</th>' +
+      '<th class="r">' + esc(valueLabel) + "</th>" +
+      '<th class="r">Percentile</th><th class="r">Band</th>' +
+      "</tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  function renderRareLog(kills) {
+    if (!kills || !kills.length) {
+      return emptyState("No rare kills have been reported.");
+    }
+    var rows = kills.map(function (k) {
+      var when = new Date(k.at * 1000);
+      return "<tr>" +
+        '<td class="who">' + esc(k.name || "#" + k.npc) + "</td>" +
+        "<td>" + esc(k.by) + "</td>" +
+        "<td>" + esc(when.toLocaleString()) + "</td>" +
+        '<td class="r realm">' + (k.witnessed ? "witnessed" : "killing blow") +
+          (k.learned ? " · learned" : "") + "</td>" +
+        "</tr>";
+    }).join("");
+    return '<table class="ranktable"><thead><tr>' +
+      "<th>Rare</th><th>Killed by</th><th>When</th><th class=\"r\">How</th>" +
+      "</tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  // ---- loading ------------------------------------------------------------
+
+  var VIEWS = {
+    levelling: { path: "/api/leaderboard?board=levelling", label: "Levels/hr",
+                 empty: "No levelling times have been uploaded." },
+    pvp:       { path: "/api/leaderboard?board=pvp", label: "Honorable kills",
+                 empty: "No battleground stats have been uploaded." },
+    rares:     { path: "/api/leaderboard?board=rares", label: "Rares killed",
+                 empty: "No rare kills have been uploaded." }
   };
 
-  function personCell(e) {
-    var who = el("div", "who");
-    var nameRow = el("div", "name");
-    nameRow.appendChild(document.createTextNode(e.display || "Unknown"));
-    if (e.flags && e.flags.length) {
-      var badge = el("span", "flagbadge", "?");
-      badge.title = "Needs review: " + e.flags.map(function (f) {
-        return FLAG_TEXT[f] || f;
-      }).join("; ");
-      nameRow.appendChild(badge);
-    }
-    who.appendChild(nameRow);
-    var bits = [];
-    if (e.realm) bits.push(e.realm);
-    if (e.class) bits.push(e.class.toLowerCase());
-    if (e.faction) bits.push(e.faction.toLowerCase());
-    if (e.level) bits.push("lvl " + e.level);
-    if (bits.length) {
-      var meta = el("div", "meta");
-      bits.forEach(function (b, i) {
-        if (i) meta.appendChild(el("span", "sep", "/"));
-        meta.appendChild(document.createTextNode(b));
+  function show(html) {
+    var b = $("board");
+    if (b) b.innerHTML = html;
+  }
+
+  function load(which, force) {
+    view = which;
+    if (!force && cache[which]) { show(cache[which]); return; }
+    show('<div class="empty-board"><p>Loading…</p></div>');
+
+    var p;
+    if (which === "rarelog") {
+      p = call("/api/rares?limit=60").then(function (d) {
+        return renderRareLog(d.kills || []);
       });
-      who.appendChild(meta);
-    }
-    return who;
-  }
-
-  function parseCell(pct, label) {
-    var b = band(pct);
-    var d = el("div", "parse");
-    d.style.setProperty("--c", b.css);
-    d.textContent = (pct === null || pct === undefined) ? "—" : Math.round(pct);
-    var s = el("small", null, (pct === null || pct === undefined) ? "unranked" : (label || b.name));
-    d.appendChild(s);
-    return d;
-  }
-
-  function makeRow(e, pct, cells, i) {
-    var b = band(pct);
-    var row = el("div", "row");
-    row.style.setProperty("--cols", cells.length);
-    row.style.setProperty("--c", b.css);
-    row.style.setProperty("--fill", (pct === null || pct === undefined ? 0 : pct) + "%");
-    row.style.animationDelay = Math.min(i * 22, 500) + "ms";
-    row.appendChild(el("div", "rank", e.rank));
-    row.appendChild(personCell(e));
-    cells.forEach(function (c) { row.appendChild(c); });
-    return row;
-  }
-
-  function empty(title, lines, hint) {
-    var box = el("div", "empty");
-    box.appendChild(el("h2", null, title));
-    lines.forEach(function (html) {
-      var p = el("p");
-      p.innerHTML = html;
-      box.appendChild(p);
-    });
-    if (hint) {
-      var h = el("p", "hint");
-      h.innerHTML = hint;
-      box.appendChild(h);
-    }
-    return box;
-  }
-
-  // ---- views ---------------------------------------------------------------
-
-  function renderOverall(entries) {
-    boardEl.innerHTML = "";
-    if (!entries.length) {
-      boardEl.appendChild(empty(
-        "No one has posted a level yet.",
-        ["This board only ever shows people running LevelPace with sharing switched on — " +
-          "there is no way to pull levelling data out of WoW itself, so nothing appears " +
-          "until someone measures it in game.",
-         "In game: <code>/lp</code> &rarr; Leaderboard &rarr; <em>Share my levelling stats</em>. " +
-         "Then log out, and run <code>levelpace_upload.py</code>."],
-        "A level only appears once it is <em>completed</em> — a level in progress has no pace to rank."
-      ));
-      return;
-    }
-    boardEl.appendChild(header([
-      { label: "levels" }, { label: "best" }, { label: "parse" }
-    ]));
-    entries.forEach(function (e, i) {
-      boardEl.appendChild(makeRow(e, e.parse, [
-        el("div", "num dim", fmt(e.levels)),
-        el("div", "num dim", e.best === null || e.best === undefined ? "—" : Math.round(e.best)),
-        parseCell(e.parse)
-      ], i));
-    });
-  }
-
-  function renderLevel(entries, level) {
-    boardEl.innerHTML = "";
-    if (!entries.length) {
-      boardEl.appendChild(empty(
-        "Nothing logged at level " + level + ".",
-        ["Pick another level, or be the first to finish this one."]
-      ));
-      return;
-    }
-    boardEl.appendChild(header([
-      { label: "time" }, { label: "lvl/hr" }, { label: "parse" }
-    ]));
-    entries.forEach(function (e, i) {
-      boardEl.appendChild(makeRow(e, e.parse, [
-        el("div", "num dim", minutes(e.minutes)),
-        el("div", "num dim", fmt(e.levelsPerHour, 2)),
-        parseCell(e.parse)
-      ], i));
-    });
-    if (entries.length === 1) {
-      boardEl.appendChild(empty(
-        "Only one entry here.",
-        ["A percentile needs someone to compare against, so this one shows as <em>unranked</em> " +
-         "rather than being called a 100."]
-      ));
-    }
-  }
-
-  function renderTwinks(entries) {
-    boardEl.innerHTML = "";
-    if (!entries.length) {
-      boardEl.appendChild(empty(
-        "No twink data yet.",
-        ["This board wants weekly kills, item level, lifetime kills, deaths and your top three nemeses.",
-         "The addon does not collect any of that <em>yet</em> — the PvP, item-level and " +
-         "combat-log APIs are being verified against the 3.3.5a client before anything is built on them."],
-        "The server already accepts and stores it, so the board lights up the moment the addon starts sending."
-      ));
-      return;
-    }
-    boardEl.appendChild(header([
-      { label: "wk kills" }, { label: "ilvl" }, { label: "lifetime" },
-      { label: "deaths" }, { label: "k/d" }, { label: "nemesis" }
-    ]));
-    entries.forEach(function (e, i) {
-      var nem = el("div", "nemesis");
-      (e.nemesis || []).slice(0, 3).forEach(function (n) {
-        var s = el("span");
-        s.appendChild(el("b", null, n.name || "?"));
-        s.appendChild(document.createTextNode(" ×" + (n.count || 0)));
-        nem.appendChild(s);
+    } else {
+      var v = VIEWS[which];
+      p = call(v.path).then(function (d) {
+        return renderBoard(d.entries || [], v.label, v.empty);
       });
-      if (!nem.childNodes.length) nem.appendChild(el("span", null, "—"));
+    }
 
-      // Twinks rank on kills, so the colour follows weekly kills relative to
-      // the leader rather than a levelling parse.
-      var top = entries[0].weekly_kills || 1;
-      var pct = Math.min(100, Math.round((e.weekly_kills || 0) / top * 100));
-
-      boardEl.appendChild(makeRow(e, pct, [
-        el("div", "num", fmt(e.weekly_kills)),
-        el("div", "num dim", e.item_level ? fmt(e.item_level, 1) : "—"),
-        el("div", "num dim hide-sm", fmt(e.lifetime_kills)),
-        el("div", "num dim hide-sm", fmt(e.deaths)),
-        el("div", "num hide-sm", e.kd === null || e.kd === undefined ? "—" : fmt(e.kd, 2)),
-        nem
-      ], i));
+    p.then(function (html) {
+      cache[which] = html;
+      show(html);
+      var snap = $("snapshot");
+      if (snap) {
+        snap.hidden = false;
+        snap.textContent = "updated " + new Date().toLocaleTimeString();
+      }
+    }).catch(function (err) {
+      live(false, "cannot reach the board API");
+      show('<div class="empty-board"><p><strong>Could not reach the board.</strong> ' +
+        reason(err) + "</p><p>The addon still works; only this page needs the API.</p></div>");
     });
   }
 
-  // ---- loading -------------------------------------------------------------
+  function reason(err) {
+    return esc(err && err.message ? err.message : String(err));
+  }
 
   function loadVitals() {
-    api("/api/stats").then(function (s) {
-      document.getElementById("v-players").textContent = fmt(s.players);
-      document.getElementById("v-levels").textContent = fmt(s.levels);
-      document.getElementById("v-pvp").textContent = fmt(s.pvp);
-      showSnapshotAge(s.published);
-      // The publisher derives the releases URL from the Pages URL, so this
-      // stays correct if the repo is ever renamed or moved.
-      var get = document.getElementById("getit");
-      if (get && s.downloadUrl) {
-        get.href = s.downloadUrl;
-        if (s.addonVersion) get.firstChild.nodeValue = "Get the addon " + s.addonVersion + " ";
-      }
-    }).catch(function () {});
-  }
-
-  function loadLevels() {
-    return api("/api/baseline").then(function (b) {
-      var sel = document.getElementById("level-select");
-      var have = Object.keys(b.byLevel || {}).map(Number).sort(function (a, c) { return a - c; });
-      sel.innerHTML = "";
-      if (!have.length) {
-        sel.appendChild(new Option("—", ""));
-        return null;
-      }
-      have.forEach(function (l) { sel.appendChild(new Option(l, l)); });
-      if (state.level === null || have.indexOf(state.level) === -1) state.level = have[0];
-      sel.value = String(state.level);
-      return state.level;
+    call("/api/stats").then(function (s) {
+      live(true, "board is live");
+      if ($("v-players")) $("v-players").textContent = s.characters || 0;
+      if ($("v-levels")) $("v-levels").textContent = s.levels || 0;
+      if ($("v-rares")) $("v-rares").textContent = s.rareKills || 0;
+    }).catch(function () {
+      live(false, "board API is not responding");
     });
   }
 
-  function load() {
-    boardEl.innerHTML = "";
-    boardEl.appendChild(empty("Loading…", []));
-    loadVitals();
+  // ---- wiring -------------------------------------------------------------
 
-    if (state.view === "overall") {
-      api("/api/leaderboard").then(function (d) { renderOverall(d.entries || []); })
-        .catch(failed);
-    } else if (state.view === "level") {
-      loadLevels().then(function (level) {
-        if (level === null) { renderLevel([], "—"); return; }
-        return api("/api/leaderboard?level=" + level).then(function (d) {
-          renderLevel(d.entries || [], level);
+  document.addEventListener("DOMContentLoaded", function () {
+    var tabs = document.querySelectorAll(".tab");
+    Array.prototype.forEach.call(tabs, function (t) {
+      t.addEventListener("click", function () {
+        Array.prototype.forEach.call(tabs, function (o) {
+          o.classList.remove("is-active");
+          o.setAttribute("aria-selected", "false");
         });
-      }).catch(failed);
-    } else {
-      api("/api/twinks").then(function (d) { renderTwinks(d.entries || []); })
-        .catch(failed);
-    }
-  }
-
-  function failed(err) {
-    boardEl.innerHTML = "";
-    boardEl.appendChild(empty(
-      STATIC ? "That board has not been published yet." : "Could not reach the server.",
-      ["<code>" + String(err.message || err) + "</code>",
-       STATIC
-         ? "This is a published snapshot. Whoever hosts it needs to run the publish step again."
-         : "Is <code>levelpace_server.py</code> running?"]
-    ));
-  }
-
-  // A published snapshot is a point in time, and saying so is the difference
-  // between "quiet week" and "nobody has updated this since March".
-  function showSnapshotAge(fetched) {
-    if (!STATIC || !fetched) return;
-    var el2 = document.getElementById("snapshot");
-    if (!el2) return;
-    var mins = Math.max(0, (Date.now() / 1000 - fetched) / 60);
-    var txt;
-    if (mins < 90) txt = Math.round(mins) + " min ago";
-    else if (mins < 60 * 48) txt = Math.round(mins / 60) + " hours ago";
-    else txt = Math.round(mins / 1440) + " days ago";
-    el2.textContent = "snapshot published " + txt;
-    el2.hidden = false;
-  }
-
-  // ---- wiring --------------------------------------------------------------
-
-  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (t) {
-    t.addEventListener("click", function () {
-      Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (o) {
-        o.classList.remove("is-active");
-        o.setAttribute("aria-selected", "false");
+        t.classList.add("is-active");
+        t.setAttribute("aria-selected", "true");
+        load(t.getAttribute("data-view"), false);
       });
-      t.classList.add("is-active");
-      t.setAttribute("aria-selected", "true");
-      state.view = t.dataset.view;
-      document.getElementById("lvlpick").hidden = (state.view !== "level");
-      load();
     });
-  });
 
-  document.getElementById("level-select").addEventListener("change", function (e) {
-    state.level = Number(e.target.value);
-    load();
-  });
-  document.getElementById("refresh").addEventListener("click", load);
+    var r = $("refresh");
+    if (r) r.addEventListener("click", function () {
+      cache = {};
+      loadVitals();
+      load(view, true);
+    });
 
-  load();
+    loadVitals();
+    load("levelling", false);
+  });
 })();
