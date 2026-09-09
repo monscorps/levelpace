@@ -2,7 +2,7 @@
 ## Title: LevelPace
 ## Notes: Honest XP tracking, time-to-level, and quest-vs-grind ranking.
 ## Author: Dan
-## Version: 0.9.9
+## Version: 0.9.10
 ## SavedVariables: LevelPaceDB
 ## SavedVariablesPerCharacter: LevelPaceCharDB
 
