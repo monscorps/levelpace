@@ -158,29 +158,109 @@ function Get-Config {
 # Finding WoW
 # ---------------------------------------------------------------------------
 
-function Find-WowRoots {
-    $hints = @(
-        'C:\World of Warcraft', 'C:\Games\World of Warcraft',
-        'C:\Program Files (x86)\World of Warcraft',
-        'C:\Program Files\World of Warcraft',
-        (Join-Path $env:USERPROFILE 'World of Warcraft'),
-        (Join-Path $env:USERPROFILE 'Desktop\World of Warcraft'),
-        (Join-Path $env:USERPROFILE 'Games\World of Warcraft'),
-        (Split-Path -Parent (Split-Path -Parent $Root))
-    )
-    $found = @()
-    foreach ($h in $hints) {
-        if ($h -and (Test-Path (Join-Path $h 'WTF\Account'))) { $found += $h }
+# Where the player told us WoW lives. No amount of guessing beats being told,
+# and private-server installs live anywhere: C:\Warmane, D:\Games\Wrath,
+# a folder named after whichever server they play on.
+function Get-WowPathFile {
+    return (Join-Path (Split-Path -Parent $LogPath) 'wowpath.txt')
+}
+
+function Get-SavedWowRoot {
+    $f = Get-WowPathFile
+    if (Test-Path $f) {
+        $p = (Get-Content $f -Raw).Trim()
+        if ($p -and (Test-Path (Join-Path $p 'WTF'))) { return $p }
     }
+    return $null
+}
+
+function Set-SavedWowRoot([string] $path) {
+    $dir = Split-Path -Parent $LogPath
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    Set-Content -Path (Get-WowPathFile) -Value $path -NoNewline -Encoding ascii
+    Write-Log "WoW folder set to $path"
+}
+
+# Accept a near miss. People pick Interface, or Interface\AddOns, or the
+# folder above the real one -- all of which are obvious enough to resolve
+# rather than refuse.
+function Resolve-WowRoot([string] $picked) {
+    if ([string]::IsNullOrWhiteSpace($picked)) { return $null }
+
+    # This is fed straight from a folder picker, so the input is whatever the
+    # player clicked: a drive root, a UNC share, something that vanished
+    # between picking and checking. Every path operation here can throw on one
+    # of those, and $ErrorActionPreference is Stop -- so each one is guarded
+    # individually rather than trusted.
+    $test = {
+        param($candidate)
+        if ([string]::IsNullOrWhiteSpace($candidate)) { return $false }
+        try { return (Test-Path (Join-Path $candidate 'WTF')) } catch { return $false }
+    }
+
+    $candidates = @($picked)
+
+    $up = $picked
+    for ($i = 0; $i -lt 2; $i++) {
+        try { $up = Split-Path -Parent $up } catch { break }
+        if ([string]::IsNullOrWhiteSpace($up)) { break }
+        $candidates += $up
+    }
+
+    try { $candidates += (Join-Path $picked 'World of Warcraft') } catch { }
+
+    foreach ($c in $candidates) {
+        if (& $test $c) { return $c }
+    }
+
+    # Last try: one level down, for a "C:\Games" that CONTAINS the install.
+    try {
+        foreach ($d in (Get-ChildItem $picked -Directory -ErrorAction SilentlyContinue)) {
+            if (& $test $d.FullName) { return $d.FullName }
+        }
+    } catch { }
+
+    return $null
+}
+
+function Find-WowRoots {
+    # A folder the player chose always wins.
+    $saved = Get-SavedWowRoot
+    if ($saved) { return @($saved) }
+
+    $names = @('World of Warcraft', 'WoW', 'Wrath', 'WoW 3.3.5a', 'WoW335',
+               'Wrath of the Lich King', 'Warmane', 'WotLK')
+    $bases = @('C:\', 'D:\', 'E:\', 'C:\Games', 'D:\Games',
+               'C:\Program Files (x86)', 'C:\Program Files',
+               $env:USERPROFILE,
+               (Join-Path $env:USERPROFILE 'Desktop'),
+               (Join-Path $env:USERPROFILE 'Downloads'),
+               (Join-Path $env:USERPROFILE 'Games'),
+               (Split-Path -Parent $Root),
+               (Split-Path -Parent (Split-Path -Parent $Root)))
+
+    $found = @()
+    foreach ($b in $bases) {
+        if (-not $b) { continue }
+        # The base itself might BE the install (the .bat unzipped inside it).
+        if (Test-Path (Join-Path $b 'WTF\Account')) { $found += $b; continue }
+        foreach ($n in $names) {
+            $c = Join-Path $b $n
+            if (Test-Path (Join-Path $c 'WTF\Account')) { $found += $c }
+        }
+    }
+
+    # Still nothing: one shallow sweep of each drive root. Deliberately one
+    # level only -- walking whole disks on a timer is how an uploader becomes
+    # the reason someone's machine is slow.
     if ($found.Count -eq 0) {
         foreach ($d in (Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)) {
-            foreach ($n in @('World of Warcraft', 'WoW', 'Wrath')) {
-                $c = Join-Path $d.Root $n
-                if (Test-Path (Join-Path $c 'WTF\Account')) { $found += $c }
+            foreach ($sub in (Get-ChildItem $d.Root -Directory -ErrorAction SilentlyContinue)) {
+                if (Test-Path (Join-Path $sub.FullName 'WTF\Account')) { $found += $sub.FullName }
             }
         }
     }
-    return $found
+    return ($found | Select-Object -Unique)
 }
 
 function Find-SavedVariables {
@@ -341,7 +421,18 @@ function Invoke-Sync([switch]$Quiet) {
     }
 
     if ($payloads.Count -eq 0) {
-        Write-Log "nothing to send (sharing off, or not logged out since enabling it)"
+        $roots = Find-WowRoots
+        if ($roots.Count -eq 0) {
+            Write-Log "Nothing to send: could not find your World of Warcraft folder."
+            Write-Log "  Right-click the tray icon and choose 'Set WoW folder...'"
+        } else {
+            # The commonest case by far, and not an error: WoW writes its
+            # saved variables ONLY on logout or /reload. A player who just
+            # installed the addon has no file yet.
+            Write-Log ("Nothing to send yet. Found WoW at {0}." -f $roots[0])
+            Write-Log "  Log out of WoW once (or type /reload) and this will pick it up."
+            Write-Log "  Also check sharing is on: /lp then Leaderboard."
+        }
     } else {
         $merged = '[' + (($payloads | ForEach-Object { $_.Trim().TrimStart('[').TrimEnd(']') }) -join ',') + ']'
         $headers = @{}
@@ -387,8 +478,22 @@ function Invoke-Sync([switch]$Quiet) {
     # a failed send should still leave current rankings in game.
     $addon = Find-AddonDir
     if (-not $addon) {
-        Write-Log "addon folder not found; skipped board"
-        $script:LastStatus = if ($ok) { "sent $sent, addon not found" } else { "upload failed" }
+        # Three very different situations used to share one message. Saying
+        # which one it is turns a dead end into an instruction.
+        $roots = Find-WowRoots
+        if ($roots.Count -eq 0) {
+            Write-Log "Could not find your World of Warcraft folder."
+            Write-Log "  Right-click the tray icon and choose 'Set WoW folder...'"
+            $script:LastStatus = "WoW folder not set - right-click me"
+        } elseif (-not (Test-Path (Join-Path $roots[0] 'Interface\AddOns\LevelPace'))) {
+            Write-Log ("Found WoW at {0}, but the LevelPace addon is not installed there." -f $roots[0])
+            Write-Log "  Unzip LevelPace.zip into Interface\AddOns so you have"
+            Write-Log "  Interface\AddOns\LevelPace\LevelPace.toc"
+            $script:LastStatus = "addon not installed in that WoW folder"
+        } else {
+            Write-Log "addon folder not found; skipped board"
+            $script:LastStatus = "addon not found"
+        }
         return
     }
 
@@ -443,6 +548,27 @@ $miBoard.Add_Click({
     $cfg = Get-Config
     $url = if ($cfg.Baseline) { ($cfg.Baseline -replace '/api/baseline\.json$', '/') } else { $cfg.Server }
     Start-Process $url
+})
+
+$miWow = $menu.Items.Add('Set WoW folder...')
+$miWow.Add_Click({
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = 'Select your World of Warcraft folder (the one containing Wow.exe)'
+    $dlg.ShowNewFolderButton = $false
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $resolved = Resolve-WowRoot $dlg.SelectedPath
+        if ($resolved) {
+            Set-SavedWowRoot $resolved
+            [System.Windows.Forms.MessageBox]::Show(
+                ("Using: {0}" -f $resolved), 'LevelPace') | Out-Null
+            Invoke-Sync
+        } else {
+            [System.Windows.Forms.MessageBox]::Show(
+                ("That folder has no WTF directory, so it is not a WoW install:" +
+                 "`r`n`r`n{0}`r`n`r`nPick the folder that contains Wow.exe." -f $dlg.SelectedPath),
+                'LevelPace') | Out-Null
+        }
+    }
 })
 
 $miLog = $menu.Items.Add('View log')
