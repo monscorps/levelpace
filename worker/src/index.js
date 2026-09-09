@@ -33,6 +33,7 @@ const WCL_BANDS = [
 const LIMITS = {
   enrol: { n: 5, windowMs: 3600_000 },
   submit: { n: 60, windowMs: 3600_000 },
+  legacy: { n: 10, windowMs: 3600_000 },
 };
 
 // Bounds. Reject the impossible; flag the merely implausible. Deliberately
@@ -222,10 +223,18 @@ async function handleSubmit(req, env) {
   if (!installId) {
     const legacy = req.headers.get('x-levelpace-token');
     if (legacy && env.LEGACY_TOKEN && legacy === env.LEGACY_TOKEN) {
+      // This path used to return BEFORE any rate limiting, and the token it
+      // accepts shipped inside every download -- so anyone holding it could
+      // write unlimited 100KB rows into D1 forever. It is a transition
+      // courtesy, not a trusted caller, and is limited accordingly.
+      const ip = req.headers.get('cf-connecting-ip') || 'unknown';
+      if (await rateLimited(env, 'legacy', ip, LIMITS.legacy))
+        return json({ error: 'too many legacy submissions' }, 429);
+
       await env.DB.prepare(
         'INSERT INTO quarantine (payload, reason, received) VALUES (?, ?, ?)'
       )
-        .bind(JSON.stringify(body).slice(0, 100_000), 'legacy-token', now())
+        .bind(JSON.stringify(body).slice(0, 20_000), 'legacy-token', now())
         .run();
       return json({
         ok: true,
@@ -418,6 +427,9 @@ async function handleSubmit(req, env) {
     .run();
 
   await recomputeParse(env);
+  // Deterministic from the clock rather than Math.random: same effect, and it
+  // cannot accidentally fire on every request in a bad run.
+  if (now() % 50 === 0) await pruneAudit(env);
   return json({ ok: true, results });
 }
 
@@ -425,6 +437,21 @@ async function handleSubmit(req, env) {
  * Recompute rankings on WRITE, not on read: D1 bills rows read, and a board is
  * read far more often than it is written.
  */
+/**
+ * The audit table backs rate limiting AND grows forever. D1 bills rows read,
+ * so an unpruned table makes every single request progressively more
+ * expensive and slower -- a cost leak rather than a crash, which is why it
+ * would have gone unnoticed.
+ *
+ * Pruned opportunistically rather than on a schedule: no cron to forget, and
+ * the work lands on roughly one request in fifty.
+ */
+async function pruneAudit(env) {
+  const cutoff = now() - 7 * 24 * 3600;
+  await env.DB.prepare('DELETE FROM audit WHERE at < ?').bind(cutoff).run();
+  await env.DB.prepare('DELETE FROM quarantine WHERE received < ?').bind(cutoff).run();
+}
+
 async function recomputeParse(env) {
   const t = now();
 

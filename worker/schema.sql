@@ -120,3 +120,7 @@ CREATE TABLE IF NOT EXISTS audit (
   at         INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at DESC);
+-- The rate limiter filters on all three of these. With only (at) indexed,
+-- every enrol and every submit scanned the table -- and D1 bills rows read,
+-- so the cost grew with the table forever.
+CREATE INDEX IF NOT EXISTS idx_audit_rl ON audit(kind, detail, at);
