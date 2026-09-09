@@ -5,6 +5,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 OUT=dist
+
+# The TOC is the single source of truth for the version; release.sh bumps it
+# before calling this. The companion used to carry its own hardcoded copy that
+# nobody ever bumped, so every log line it wrote claimed 0.4.0 regardless of
+# the build -- which made a real user's log impossible to place.
+VERSION=$(sed -n 's/^## Version:[[:space:]]*//p' LevelPace/LevelPace.toc | tr -d '\r')
+: "${VERSION:=dev}"
+echo "  version: $VERSION"
+
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp -R LevelPace "$OUT/LevelPace"
 # The player-facing guide ships INSIDE the addon zip too, because that is the
@@ -89,7 +98,9 @@ COMPANION="$LB/LevelPace Companion.bat"
   printf 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -Command "$env:LEVELPACE_BAT=\x27%%~f0\x27;try{$s=[IO.File]::ReadAllText($env:LEVELPACE_BAT);iex ($s.Substring($s.IndexOf(\x27#PS\x27+\x27START\x27)))}catch{[IO.File]::WriteAllText($env:TEMP+\x27\\LevelPace-startup-error.txt\x27,$_.Exception.ToString())}"\r\n'
   printf 'exit /b\r\n'
   printf '#PSSTART\r\n'
-  perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1
+  # Stamp the real version in. It used to be hardcoded in the script and
+  # never bumped, so every log line claimed 0.4.0 whatever build wrote it.
+  sed "s/@@VERSION@@/$VERSION/" uploader/Companion.ps1 | perl -pe 's/\r?\n/\r\n/'
 } > "$COMPANION"
 echo "  built companion: $(basename "$COMPANION")"
 
@@ -111,7 +122,7 @@ DEBUG_BAT="$LB/LevelPace Companion (SHOW ERRORS).bat"
   printf 'powershell -NoProfile -ExecutionPolicy Bypass -STA -NoExit -Command "$env:LEVELPACE_BAT=\x27%%~f0\x27;$ErrorActionPreference=\x27Continue\x27;Write-Host (\x27PowerShell \x27 + $PSVersionTable.PSVersion.ToString()) -Foreground Cyan;try{$s=[IO.File]::ReadAllText($env:LEVELPACE_BAT);$i=$s.IndexOf(\x27#PS\x27+\x27START\x27);Write-Host (\x27marker at \x27 + $i) -Foreground Cyan;iex ($s.Substring($i))}catch{Write-Host \x27=== FAILED ===\x27 -Foreground Red;$e=$_.Exception;while($e){Write-Host ($e.GetType().Name + \x27: \x27 + $e.Message) -Foreground Red;$e=$e.InnerException};Write-Host (\x27at line \x27 + $_.InvocationInfo.ScriptLineNumber) -Foreground Yellow;Write-Host $_.InvocationInfo.Line -Foreground Yellow}"\r\n'
   printf 'exit /b\r\n'
   printf '#PSSTART\r\n'
-  perl -pe 's/\r?\n/\r\n/' uploader/Companion.ps1
+  sed "s/@@VERSION@@/$VERSION/" uploader/Companion.ps1 | perl -pe 's/\r?\n/\r\n/'
 } > "$DEBUG_BAT"
 echo "  built debug launcher: $(basename "$DEBUG_BAT")"
 

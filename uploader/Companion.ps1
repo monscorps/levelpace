@@ -17,7 +17,11 @@
 #>
 
 $ErrorActionPreference = 'Stop'
-$Version  = '0.4.0'
+# Replaced by build.sh with the real release version. It was hardcoded and
+# never bumped, so every log line said 0.4.0 no matter which build produced
+# it -- which made a real user's log impossible to place against a release.
+$Version  = '@@VERSION@@'
+if ($Version -like '@@*') { $Version = 'dev' }
 # $MyInvocation.MyCommand.Path is NULL when a script is run through
 # Invoke-Expression -- which is exactly how the welded .bat runs this one.
 # Combined with $ErrorActionPreference = 'Stop' set on the line above,
@@ -309,6 +313,14 @@ function Find-WowRoots {
                 } catch { }
             }
         } catch { }
+    }
+    if ($found.Count -eq 0) {
+        # 'Could not find it' is only actionable if you can see where it
+        # looked. Without this, the only move left is to guess.
+        Write-Log "searched for WoW and found none. Looked in:"
+        foreach ($b in ($bases | Select-Object -First 8)) { Write-Log "    $b" }
+        Write-Log ("    (companion is running from: {0})" -f $Root)
+        Write-Log "  A folder counts only if it contains WTF\Account."
     }
     return ($found | Select-Object -Unique)
 }
