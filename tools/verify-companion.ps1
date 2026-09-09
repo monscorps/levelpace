@@ -15,7 +15,8 @@
     Exits non-zero with a reason if the launcher would not start.
 #>
 
-param([Parameter(Mandatory = $true)][string] $Bat)
+param([Parameter(Mandatory = $true)][string] $Bat,
+      [string] $Lua = '')
 
 if (-not (Test-Path $Bat)) {
     Write-Host "not found: $Bat"
@@ -216,6 +217,128 @@ if ($fnOut -notmatch 'FUNCS_OK') {
     exit 1
 }
 Write-Host "  (startup functions survive a machine with no WoW, no addon, no network)"
+
+# 9. The board the companion writes must be the board the addon reads.
+#
+# The Worker names its fields differently from the server this was first
+# written against (name/metric/percentile, not display/parse/best). The
+# mapping lives in Write-Board, and nothing but the game itself would notice
+# it being wrong -- so feed it a Worker-shaped response here and read the
+# result back with real Lua 5.1, the way the client will.
+$tmp3 = Join-Path ([IO.Path]::GetTempPath()) ("lp-board-" + [guid]::NewGuid().ToString("N"))
+$addonDir = Join-Path $tmp3 'addon'
+New-Item -ItemType Directory -Force -Path $addonDir | Out-Null
+$fnFile3 = Join-Path $tmp3 'functions.ps1'
+[IO.File]::WriteAllText($fnFile3, $fnPart)
+
+# Exactly what the live endpoints return today, including a population-of-one
+# null percentile and a hidden realm.
+[IO.File]::WriteAllText((Join-Path $tmp3 'lb.json'), @'
+{"board":"levelling","scope":"overall","updated":1,"entries":[
+ {"rank":1,"name":"Rickmyrolls","realm":"Icecrown","class":"DEATHKNIGHT","faction":"Horde","level":5,"metric":48.32,"percentile":null,"band":null,"levels":4},
+ {"rank":2,"name":"Dan","realm":null,"class":"WARRIOR","faction":"Alliance","level":12,"metric":12.5,"percentile":75,"band":"purple","levels":11}]}
+'@)
+[IO.File]::WriteAllText((Join-Path $tmp3 'tw.json'), @'
+{"board":"pvp","scope":"overall","updated":1,"entries":[
+ {"rank":1,"name":"Ganker","realm":"Icecrown","class":"ROGUE","faction":"Horde","level":19,"metric":250,"percentile":null,"band":null,"levels":18}]}
+'@)
+[IO.File]::WriteAllText((Join-Path $tmp3 'base.json'), @'
+{"schema":1,"fetched":1,"players":2,"overall":[48.32,12.5],"byLevel":{"1":[51.4286],"2":[102.8571,90.0]}}
+'@)
+[IO.File]::WriteAllText((Join-Path $tmp3 'ver.json'), @'
+{"addonVersion":"9.9.9","downloadUrl":"https://example.test/dl","published":1}
+'@)
+
+$mapSrc = @"
+`$env:LEVELPACE_BAT = '$((Resolve-Path $Bat).Path)'
+`$env:LOCALAPPDATA  = '$tmp3'
+`$env:TEMP          = '$tmp3'
+`$env:LEVELPACE_OFFLINE = '1'
+try { . '$fnFile3' } catch { Write-Output ('LOAD_FAILED::' + `$_.Exception.Message); exit }
+try {
+    `$j = { param(`$n) Get-Content -Raw (Join-Path '$tmp3' `$n) | ConvertFrom-Json }
+    `$lb = & `$j 'lb.json'; `$tw = & `$j 'tw.json'; `$base = & `$j 'base.json'; `$ver = & `$j 'ver.json'
+    Write-Board '$addonDir' `$lb.entries `$tw.entries `$ver 'https://api.example.test'
+    Write-Baseline '$addonDir' `$base 'https://api.example.test'
+    Write-Output 'MAP_OK'
+} catch {
+    Write-Output ('MAP_FAILED::' + `$_.Exception.Message + ' [at: ' + `$_.InvocationInfo.Line.Trim() + ']')
+}
+"@
+$mapFile = Join-Path $tmp3 'map.ps1'
+[IO.File]::WriteAllText($mapFile, $mapSrc)
+$mapOut = & $pwshPath -NoProfile -File $mapFile 2>&1 | Out-String
+if ($mapOut -match '(LOAD_FAILED|MAP_FAILED)::(.+)') {
+    Write-Host "Write-Board / Write-Baseline fail on a Worker-shaped response:"
+    Write-Host ("  " + $Matches[2].Trim())
+    Remove-Item -Recurse -Force $tmp3 -ErrorAction SilentlyContinue
+    exit 1
+}
+if ($mapOut -notmatch 'MAP_OK') {
+    Write-Host "could not run the board mapping:"
+    ($mapOut -split "`n") | Select-Object -First 4 | ForEach-Object { Write-Host ("  " + $_.TrimEnd()) }
+    Remove-Item -Recurse -Force $tmp3 -ErrorAction SilentlyContinue
+    exit 1
+}
+
+$boardLua = Join-Path $addonDir 'Board.lua'
+$baseLua  = Join-Path $addonDir 'Baseline.lua'
+$checkLua = Join-Path $tmp3 'check.lua'
+[IO.File]::WriteAllText($checkLua, @'
+local board, base = ...
+dofile(board); dofile(base)
+local B, S = LevelPaceBoard, LevelPaceBaseline
+assert(type(B) == "table" and type(S) == "table", "globals defined")
+local e = B.overall[1]
+assert(e.name == "Rickmyrolls", "name comes from the Worker's 'name'")
+assert(e.realm == "Icecrown" and e.level == 5 and e.class == "DEATHKNIGHT", "identity fields")
+assert(e.metric == 48.32 and e.best == 48.32, "metric, and 'best' alias for the in-game board")
+assert(e.percentile == nil and e.parse == nil and e.band == nil, "population of one stays nil, not 0")
+assert(e.levels == 4, "levels count")
+local d = B.overall[2]
+assert(d.realm == nil, "hidden realm is nil")
+assert(d.percentile == 75 and d.parse == 75 and d.band == "purple", "percentile, parse alias, band")
+local t = B.twinks[1]
+assert(t.name == "Ganker" and t.metric == 250 and t.kills == 250 and t.lifetime == 250, "pvp mapping")
+assert(B.addonVersion == "9.9.9" and B.downloadUrl == "https://example.test/dl", "version.json passthrough")
+assert(B.source == "https://api.example.test", "source")
+assert(S.players == 2 and #S.overall == 2 and S.overall[1] == 48.32, "baseline overall")
+assert(S.byLevel[1] and S.byLevel[1][1] == 51.4286, "byLevel keyed by number")
+assert(S.byLevel[2] and #S.byLevel[2] == 2, "byLevel lists")
+print("LUA_OK")
+'@)
+
+# Prefer a real Lua 5.1 (the one the tests use); fall back to a text check.
+$luaBin = $Lua
+if (-not $luaBin) {
+    foreach ($c in @('luajit', 'lua5.1', 'lua51')) {
+        $g = Get-Command $c -ErrorAction SilentlyContinue
+        if ($g) { $luaBin = $g.Source; break }
+    }
+}
+if ($luaBin) {
+    $luaOut = & $luaBin $checkLua $boardLua $baseLua 2>&1 | Out-String
+    if ($luaOut -notmatch 'LUA_OK') {
+        Write-Host "the Board.lua / Baseline.lua the companion writes do not read back correctly in Lua:"
+        ($luaOut -split "`n") | Select-Object -First 4 | ForEach-Object { Write-Host ("  " + $_.TrimEnd()) }
+        Write-Host "  --- Board.lua ---"
+        (Get-Content $boardLua) | Select-Object -First 12 | ForEach-Object { Write-Host ("  " + $_) }
+        Remove-Item -Recurse -Force $tmp3 -ErrorAction SilentlyContinue
+        exit 1
+    }
+    Write-Host "  (Board.lua and Baseline.lua read back correctly in Lua 5.1)"
+} else {
+    $bt = Get-Content -Raw $boardLua
+    foreach ($needle in @('name="Rickmyrolls"', 'metric=48.32', 'parse=nil', 'levels=4', 'band="purple"', 'addonVersion="9.9.9"')) {
+        if (-not $bt.Contains($needle)) {
+            Write-Host "Board.lua lacks '$needle' -- the field mapping is wrong"
+            Remove-Item -Recurse -Force $tmp3 -ErrorAction SilentlyContinue
+            exit 1
+        }
+    }
+    Write-Host "  (no Lua 5.1 on this machine; Board.lua checked by text only)"
+}
+Remove-Item -Recurse -Force $tmp3 -ErrorAction SilentlyContinue
 
 Write-Host "companion weld OK (payload extracts, parses, runs to the Windows-only tray code)"
 exit 0

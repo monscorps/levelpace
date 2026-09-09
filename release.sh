@@ -42,12 +42,27 @@ echo "==> bumping TOC to $VERSION"
 perl -pi -e "s/^## Version:.*/## Version: $VERSION/" LevelPace/LevelPace.toc
 grep '^## Version:' LevelPace/LevelPace.toc
 
+echo "==> stamping docs/api/version.json"
+# The companion copies this into the addon folder, and the addon prints
+# "version X is available" from it. It used to be whatever the retired local
+# server last wrote, which was 0.5.0 forever.
+python3 - "$VERSION" <<'EOF'
+import json, sys, time
+p = "docs/api/version.json"
+with open(p, "w") as f:
+    json.dump({"addonVersion": sys.argv[1],
+               "downloadUrl": "https://github.com/monscorps/levelpace/releases/latest",
+               "published": int(time.time())}, f, indent=2)
+    f.write("\n")
+EOF
+cat docs/api/version.json
+
 echo "==> build"
 ./build.sh >/dev/null
 ls -la dist/*.zip
 
 echo "==> commit and tag"
-git add LevelPace/LevelPace.toc
+git add LevelPace/LevelPace.toc docs/api/version.json
 git commit -q -m "chore: release v$VERSION"
 git tag -a "v$VERSION" -m "LevelPace v$VERSION"
 git push -q && git push -q --tags

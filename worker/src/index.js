@@ -564,7 +564,8 @@ async function handleLeaderboard(url, env) {
 
   const rs = await env.DB.prepare(
     `SELECT p.char_id, p.metric, p.pct, p.band,
-            c.display, c.realm, c.show_realm, c.class, c.faction, c.level
+            c.display, c.realm, c.show_realm, c.class, c.faction, c.level,
+            (SELECT COUNT(*) FROM levels l WHERE l.char_id = p.char_id) AS levels
        FROM parse p JOIN characters c ON c.char_id = p.char_id
       WHERE p.board = ? AND p.scope = ?
       ORDER BY p.metric DESC
@@ -587,6 +588,7 @@ async function handleLeaderboard(url, env) {
       metric: r.metric,
       percentile: r.pct,
       band: r.band,
+      levels: r.levels,
     })),
   });
 }
@@ -617,6 +619,38 @@ async function handleRareLog(url, env) {
     // query here that could plausibly exhaust D1's free rows-read allowance.
     nextBefore: rows.length === limit ? rows[rows.length - 1].killed_at : null,
   });
+}
+
+/**
+ * The global distribution the addon's in-game percentile gauge compares
+ * against. Served from the live tables so it can never be a stale export:
+ * `overall` is one levels-per-hour figure per ranked character; `byLevel` is
+ * one figure per recorded level, keyed by level, so a 47 is measured against
+ * other 47s rather than against the cheap early levels. Flagged rows are left
+ * out -- a baseline is exactly where an implausible number does most damage.
+ */
+async function handleBaseline(env) {
+  const ov = await env.DB.prepare(
+    `SELECT metric FROM parse WHERE board = 'levelling' AND scope = 'overall'
+      ORDER BY metric DESC LIMIT 2000`
+  ).all();
+  const lv = await env.DB.prepare(
+    `SELECT level, seconds FROM levels
+      WHERE seconds > 0 AND (flags IS NULL OR flags = '')
+      ORDER BY updated DESC LIMIT 20000`
+  ).all();
+  const byLevel = {};
+  for (const r of lv.results || []) {
+    (byLevel[r.level] = byLevel[r.level] || []).push(3600 / r.seconds);
+  }
+  const overall = (ov.results || []).map((r) => r.metric);
+  return json(
+    { schema: 1, fetched: now(), players: overall.length, overall, byLevel },
+    200,
+    // Public and recomputed at most on writes: let every companion in the
+    // same five minutes share one read of the levels table.
+    { 'cache-control': 'public, max-age=300' }
+  );
 }
 
 async function handleStats(env) {
@@ -661,11 +695,12 @@ export default {
       if (url.pathname === '/api/clients') return await handleClients(env);
       if (url.pathname === '/api/leaderboard') return await handleLeaderboard(url, env);
       if (url.pathname === '/api/rares') return await handleRareLog(url, env);
+      if (url.pathname === '/api/baseline') return await handleBaseline(env);
       if (url.pathname === '/api/stats') return await handleStats(env);
       if (url.pathname === '/' || url.pathname === '/api')
         return json({
           service: 'levelpace',
-          routes: ['/api/stats', '/api/leaderboard', '/api/rares', '/api/enrol', '/api/submit', '/api/hello', '/api/clients'],
+          routes: ['/api/stats', '/api/leaderboard', '/api/baseline', '/api/rares', '/api/enrol', '/api/submit', '/api/hello', '/api/clients'],
           board: 'https://monscorps.github.io/levelpace',
         });
       return json({ error: 'not found' }, 404);

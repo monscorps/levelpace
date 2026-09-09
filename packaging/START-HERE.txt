@@ -1,137 +1,56 @@
-LevelPace Leaderboard
-=====================
+LevelPace Companion
+===================
 
-*** THIS IS NOT AN ADDON. DO NOT PUT THIS FOLDER IN Interface\AddOns\ ***
+*** THIS IS NOT THE ADDON. DO NOT PUT THIS FOLDER IN Interface\AddOns\ ***
 
-The WoW addon is a separate download (LevelPace.zip). This folder holds
-programs that run OUTSIDE the game.
+The addon is the other download (1-ADDON-LevelPace.zip). It goes into
+Interface\AddOns and works entirely on its own.
 
-Why they exist at all: a WoW addon cannot use the internet. The Lua sandbox
-has no sockets and no HTTP. So the addon writes a file, and these programs
-carry it the rest of the way.
-
-  In the game            On a player's PC           On the host machine
-  -----------            ----------------           -------------------
-  LevelPace addon        run-uploader               run-server
-    writes its stats  ->   sends them            ->   stores + shows the board
-    reads Baseline.lua <-  writes Baseline.lua   <-   sends the global data
-
-The ONLY thing that ever goes near the addon folder is Baseline.lua, and the
-uploader writes that for you.
+This folder is the COMPANION: a small program that runs outside the game and
+carries your stats to the leaderboard, because a WoW addon cannot use the
+internet. Put this folder anywhere. Your desktop is fine.
 
 
-WHAT GOES WHERE
----------------
+WHAT TO DO
+----------
 
-  LevelPace.zip              -> C:\<WoW>\Interface\AddOns\LevelPace\
-  this folder                -> anywhere you like. Your desktop is fine.
+  1. Double-click   LevelPace Companion.bat
+     An icon appears in the notification area (bottom-right, maybe under
+     the little ^ arrow). Nothing installs. It uses the PowerShell that is
+     already in Windows.
 
-
-=============================================================================
- IF YOU ARE A PLAYER sending your stats to someone's board
-=============================================================================
-
-You need NOTHING installed. The uploader uses the PowerShell that already
-comes with Windows.
-
-  1. Install the addon (LevelPace.zip -> Interface\AddOns\LevelPace\)
-
-  2. In game:  /lp  ->  Leaderboard  ->  tick "Share my levelling stats"
+  2. In game, turn sharing on, once:
+       click the LevelPace minimap button  ->  Share to leaderboard
+       (or type:  /lp share on)
 
   3. Log out, or type /reload.
-     WoW only writes its saved-variables file on logout or /reload -- never
-     while you are playing -- so nothing exists to send until you do one.
+     WoW writes its saved data only then -- never while you play -- and the
+     companion uploads within seconds of it doing so.
 
-  4. Double-click  run-uploader.bat
-
-That is it. The server address is already filled in for you in server.txt.
-
-  Want to see what leaves your machine first?
-    Double-click  run-uploader-dryrun.bat
-    It prints exactly what would be sent, and sends nothing.
-
-  Do not want to remember step 4 every time?
-    Double-click  run-uploader-auto.bat  and leave it open. It uploads by
-    itself whenever you finish playing. That file explains how to start it
-    with Windows if you want.
-
-  Changed your mind?
-    Untick the box in /lp and the addon deletes its export. To remove your
-    entry from the board too, ask whoever runs it, or run:
-      run-uploader.bat -Forget <your clientID>
-    (the id is in your LevelPace.lua as clientID)
+That is it. Leave the icon running while you play.
 
 
-=============================================================================
- IF YOU ARE HOSTING the board
-=============================================================================
+IF SOMETHING IS OFF
+-------------------
 
-The SERVER needs Python 3.8+ (python.org -- tick "Add python.exe to PATH" on
-the first installer screen). Only the host needs this. Players do not.
+  "Could not find your World of Warcraft folder"
+      Right-click the icon -> Set WoW folder... -> pick the folder that
+      contains Wow.exe.
 
-  Windows:  double-click  run-server.bat
-  Mac:      double-click  run-server.command
+  Anything else
+      Right-click the icon -> Copy log (for Discord) -> paste it to whoever
+      gave you this. Or run "LevelPace Companion (SHOW ERRORS).bat", which
+      keeps its window open and prints the problem.
 
-Then open http://localhost:8080
-
-The Mac launcher prints every address a player could reach you on: localhost,
-your LAN address, and your Tailscale address if you have Tailscale installed.
-Put the right one in server.txt before you hand the folder out.
-
-
-GETTING SOMEONE ONTO THE BOARD
-------------------------------
-
-They need the ADDON. There is no way round that -- nothing else measures how
-long a level took, not even the game server, so the data does not exist until
-their client records it.
-
-Beyond the addon, two options:
-
-  THEY RUN THE UPLOADER  (normal, scales, nothing for you to do)
-    Put your server address in server.txt, hand them this folder, they
-    double-click run-uploader.bat. They install nothing.
-    Needs your server reachable from their PC -- see below.
-
-  THEY SEND YOU THE FILE  (fine for one or two people)
-    They send you:
-      <their WoW>\WTF\Account\<ACCOUNT>\SavedVariables\LevelPace.lua
-    You drop it in the "inbox" folder and run import-inbox.command, or:
-      python3 server/levelpace_server.py --db levelpace.db --import inbox
-    Nothing needs to be reachable at all for this.
+  The board:   https://monscorps.github.io/levelpace/
+  Feedback:    https://github.com/monscorps/levelpace/issues
 
 
-LETTING PLAYERS REACH YOUR MACHINE
-----------------------------------
+WHAT IS IN THIS FOLDER
+----------------------
 
-  SAME HOUSE / SAME NETWORK
-    Use the LAN address the server prints on startup, e.g.
-    http://192.168.1.20:8080 -- nothing to configure.
-
-  DIFFERENT HOUSES, a few people you know
-    Tailscale (tailscale.com) is easiest and safest. Everyone installs it and
-    signs in; your machine gets a stable address only your devices can reach.
-    No port forwarding, no domain, nothing exposed to the internet.
-
-  A REAL PUBLIC BOARD, strangers
-    Put it on a host with a domain and HTTPS. See README.md.
-    Do NOT port-forward this server straight to the internet: it speaks plain
-    HTTP and has only crude rate limiting. Put Caddy or nginx in front.
-
-Your machine must be ON for an upload to land. If it is off, the uploader
-just fails and tries again next time -- nothing is lost, the board simply
-does not update until you are back.
-
-
-BEFORE YOU INVITE OTHER PEOPLE
-------------------------------
-
-Read the "Data, honestly" section of README.md. Two things matter:
-
-  * Every number is supplied by the player's own client, and is therefore
-    forgeable. The server rejects the physically impossible; it cannot detect
-    a plausible lie, because it has no independent source of truth.
-
-  * If other people send you their data, you are responsible for it. Sharing
-    is off by default and the addon lists exactly what it sends. Keep it that
-    way, and honour deletion requests -- /api/forget exists for that.
+  LevelPace Companion.bat                 the program. Double-click it.
+  LevelPace Companion (SHOW ERRORS).bat   same program, window stays open.
+  server.txt                              where it sends to. Already filled in.
+  FOR-YOUR-MATES.txt                      the longer explanation, including
+                                          exactly what is (and is not) sent.

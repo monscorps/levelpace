@@ -8,18 +8,33 @@ Works on any 3.3.5a private server. No account, no sign-up, no email.
 
 ---
 
-## Fixed in 0.9.13 — the upload has never worked until now
+## Fixed in 0.9.16 — real data is on the board; two companion errors gone
 
-Every real client hit the same invisible failure: the export called
-`math.randomseed`, which **does not exist inside WoW** (Blizzard removed it;
-the game seeds the RNG itself). That call was the first step of every write,
-so sharing switched on, the game saved it, and **no data was ever produced** —
-silently, because the error was swallowed. It passed every test because
-every test environment *does* have `randomseed`; WoW is the only Lua that
-doesn't.
+The first uploads from a real client have landed: a character's levels are on
+<https://monscorps.github.io/levelpace/> right now. Two things still showed up
+in the companion's log after that, and both are fixed here:
 
-If you had sharing on before: install this addon zip and `/reload`. Your
-recorded levels upload on the next companion sync. Nothing you did was wrong.
+- **"board fetch failed: cannot connect"** every five minutes. The companion
+  was reading the rankings from the address of a machine that no longer
+  exists. It now reads them from the same place it uploads to, so the in-game
+  leaderboard (`/lp board`) and the percentile gauge fill in from live data.
+- **"Found WoW at D."** — it printed the first *letter* of your WoW path and
+  then claimed the addon was not installed there. Fixed.
+
+Also in this release:
+
+- After every upload the companion tells the server "uploaded N levels", so
+  whoever runs the board can see your install is working without asking for
+  your log.
+- Any error the companion logs now names the exact line it came from.
+- The companion zip is five files. It used to also carry an old server and
+  three launchers you should never run.
+- The in-game "version X is available" notice now points at a real version.
+
+**If you are on 0.9.15: install both zips again and `/reload`. Nothing else
+to do.** On anything older than 0.9.13, the addon zip is not optional: before
+0.9.13 the export called `math.randomseed`, which does not exist inside WoW,
+so no data was ever produced.
 
 ## Download these two
 

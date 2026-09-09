@@ -1,18 +1,12 @@
 https://levelpace.andustemme.workers.dev
 #
 # Non-comment lines, in order:
-#   1  where to SEND your stats
-#   2  submission token, if the board uses one   (optional)
-#   3  where to READ the rankings from
+#   1  where to SEND your stats. This is also where the rankings and the
+#      global baseline are read back from -- one address, always current.
+#   2  submission token, if the board uses one   (optional; the build adds it)
+#   3  the web board, named by its baseline file. The companion reads
+#      version.json from beside it and "Open the web board" goes here.
 #
 # Only whoever hands this folder out edits it. You do not need to touch it.
-#
-# The send address below is on a Tailscale network. If you have not been
-# invited to it, uploads will simply fail and say so -- everything else in
-# the addon still works, and the board below still loads.
 
-http://100.89.199.101:8080
-
-# Reading needs no server at all: GitHub Pages serves the board publicly, so
-# /lp board works even when nothing is running anywhere.
 https://monscorps.github.io/levelpace/api/baseline.json
