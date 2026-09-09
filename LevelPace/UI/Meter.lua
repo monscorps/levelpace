@@ -111,6 +111,11 @@ function M:Rows()
       local ok, rows = pcall(self.views[i].rows)
       if not ok or type(rows) ~= "table" then return {} end
       while #rows > M.MAX_ROWS do table.remove(rows) end
+      -- An empty panel says nothing; a view can say WHY it is empty.
+      if #rows == 0 and self.views[i].empty then
+        local ok2, msg = pcall(self.views[i].empty)
+        if ok2 and msg then rows[1] = { name = msg, label = "", fill = 0, plain = true } end
+      end
       return rows
     end
   end
@@ -162,11 +167,49 @@ local function bgRows(field, requireNonZero)
   return rows
 end
 
-M:AddView({ id = "bgdamage",  title = "BG damage",
+local function inBG()
+  local N = LP.Nemesis
+  return N and N.InBattleground and N:InBattleground() or false
+end
+
+local function bgEmpty()
+  if not inBG() then return "not in a battleground" end
+  -- Loaded but empty is a different fact from not loaded yet.
+  if GetNumBattlefieldScores and GetNumBattlefieldScores() > 0 then
+    return "nobody on your team has any yet"
+  end
+  return "waiting for the scoreboard (requested; a few seconds)"
+end
+
+M:AddView({ id = "bgdamage",  title = "BG damage", empty = bgEmpty,
             rows = function() return bgRows("damage", false) end })
-M:AddView({ id = "bghealing", title = "BG healing",
+
+-- What happened, newest first: who came and went, who has the flag, who you
+-- killed and who killed you -- each name in its class colour with its class
+-- icon and an inferred role icon (healer or damage, from the scoreboard).
+M:AddView({ id = "bglog", title = "BG log",
+  rows = function()
+    local N = LP.Nemesis
+    if not N or not N.LogEntries then return {} end
+    local log = N:LogEntries()
+    local rows = {}
+    for i = #log, math.max(1, #log - M.MAX_ROWS + 1), -1 do
+      local e = log[i]
+      rows[#rows + 1] = {
+        name = N:Describe(e), label = e.at or "", value = 0, fill = 0,
+        band = N:LogColour(e.kind), plain = true, kind = e.kind,
+      }
+    end
+    return rows
+  end,
+  empty = function()
+    if inBG() then return "nothing has happened yet" end
+    return "not in a battleground"
+  end })
+
+M:AddView({ id = "bghealing", title = "BG healing", empty = bgEmpty,
             rows = function() return bgRows("healing", true) end })
-M:AddView({ id = "bgkills",   title = "BG killing blows",
+M:AddView({ id = "bgkills",   title = "BG killing blows", empty = bgEmpty,
             rows = function() return bgRows("killingBlows", false) end })
 
 M:AddView({ id = "rares", title = "Rare kills", rows = function()

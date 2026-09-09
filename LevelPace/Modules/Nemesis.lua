@@ -31,6 +31,24 @@ local SOUND = "Sound\\Interface\\RaidWarning.wav"
 
 -- Below this, a "new best" is noise on a fresh install rather than news.
 local MIN_STREAK_TO_ANNOUNCE = 3
+-- The match log shown in the meter's "BG log" view. Session-local, one match.
+local MAX_LOG = 300
+-- The class icon sheet the 3.3.5a scoreboard itself draws from
+-- (WorldStateFrame.lua:665, with the CLASS_ICON_TCOORDS layout), and the LFG
+-- role icons, as inline texture escapes: the meter rows are font strings, and
+-- Blizzard's own frames embed these the same way (LFDFrame.lua:1097).
+-- Coordinates are pixels of the sheet.
+local CLASS_SHEET = "Interface\\WorldStateFrame\\Icons-Classes"
+local ROLE_ICON = {
+  healer = "|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:14:14:0:0:64:64:20:39:1:20|t",
+  damage = "|TInterface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES:14:14:0:0:64:64:20:39:22:41|t",
+}
+local LOG_COLOUR = {
+  joined  = { r = 0.12, g = 1.00, b = 0.00 }, left    = { r = 0.62, g = 0.62, b = 0.62 },
+  flag    = { r = 1.00, g = 0.50, b = 0.00 }, kill    = { r = 0.12, g = 1.00, b = 0.00 },
+  death   = { r = 1.00, g = 0.25, b = 0.25 }, nemesis = { r = 0.64, g = 0.21, b = 0.93 },
+  result  = { r = 0.90, g = 0.80, b = 0.50 }, match   = { r = 0.62, g = 0.62, b = 0.62 },
+}
 
 local function db()
   if not LP.db then return nil end
@@ -54,12 +72,29 @@ local function db()
   return d
 end
 
+-- Are we in a battleground at all? Asked BEFORE the scoreboard has anything
+-- in it, which is exactly when it matters: the scoreboard is empty until
+-- something requests it from the server.
+function N:InBattleground()
+  if IsActiveBattlefieldArena and IsActiveBattlefieldArena() then return false end
+  if IsInInstance then
+    local _, kind = IsInInstance()
+    if kind == "pvp" then return true end
+    if kind ~= nil then return false end
+  end
+  return (GetNumBattlefieldScores and GetNumBattlefieldScores() > 0) or false
+end
+
 -- Session-local. A killstreak in progress means nothing after a logout, and
 -- roster state describes one match.
 local currentStreak = 0
 local roster = {}       -- name -> misses since last seen
+local teamRoster = {}   -- same, for your own side (log only, no alerts)
 local seenRoster = false
 local matchRecorded = false   -- this match's result already written
+local unattributedDeaths = 0  -- died in a BG with no player on the last hit
+N.log = N.log or {}           -- this match's events, oldest first
+N.people = N.people or {}     -- name -> class, faction, role from the scoreboard
 
 function N:Init()
   currentStreak = 0
@@ -68,6 +103,10 @@ function N:Init()
   -- A match that is already over when we arrive -- a /reload on the final
   -- scoreboard, or joining late -- was not watched, so it is not counted.
   matchRecorded = (GetBattlefieldWinner and GetBattlefieldWinner() ~= nil) or false
+  teamRoster = {}
+  unattributedDeaths = 0
+  self.log = {}
+  self.people = {}
   db()
 end
 
@@ -75,11 +114,31 @@ end
 -- Roster
 -- ---------------------------------------------------------------------------
 
-local function enemyFaction()
+-- Which side am I on, as the scoreboard sees it (0 Horde, 1 Alliance).
+--
+-- NOT UnitFactionGroup("player"). Private servers run "mercenary mode": an
+-- Alliance character fills a Horde slot and plays FOR the Horde, and the
+-- scoreboard lists them under the Horde. Every "my team" question is answered
+-- by the row with my own name; the character's home faction is only the
+-- fallback for the moment before the scoreboard has arrived.
+function N:MyTeam()
+  local me = UnitName and UnitName("player") or nil
+  if me and GetNumBattlefieldScores and GetBattlefieldScore then
+    for i = 1, GetNumBattlefieldScores() do
+      local name, _, _, _, _, faction = GetBattlefieldScore(i)
+      -- Cross-realm rows carry "Name-Realm".
+      if name and (name == me or string.match(name, "^([^%-]+)") == me) and faction ~= nil then
+        return faction
+      end
+    end
+  end
   local mine = UnitFactionGroup and UnitFactionGroup("player")
-  -- If we cannot tell, assume Alliance so enemies read as Horde rather than
-  -- silently returning an empty enemy list.
-  if mine == "Horde" then return FACTION_ALLIANCE end
+  if mine == "Horde" then return FACTION_HORDE end
+  return FACTION_ALLIANCE
+end
+
+local function enemyFaction()
+  if N:MyTeam() == FACTION_HORDE then return FACTION_ALLIANCE end
   return FACTION_HORDE
 end
 
@@ -103,32 +162,68 @@ function N:ScanEnemies()
   return out
 end
 
-function N:PollRoster()
-  if RequestBattlefieldScoreData then RequestBattlefieldScoreData() end
-  local now = self:ScanEnemies()
-  local joined, left = {}, {}
-
-  for name in pairs(now) do
-    if roster[name] == nil then
-      joined[#joined + 1] = name
+-- Everyone on the scoreboard, both sides: what the log needs to colour a name
+-- and put a class next to it. Role is INFERRED -- healing above damage means
+-- healer -- because 3.3.5a's scoreboard carries class but never spec, and an
+-- enemy cannot be inspected.
+function N:ScanAll()
+  -- Merged into what is already known, never replaced: someone who LEAVES
+  -- drops off the scoreboard, and the log line saying so is exactly when
+  -- their class and colour are wanted. Cleared per match in Init.
+  local people = self.people or {}
+  if not GetNumBattlefieldScores or not GetBattlefieldScore then self.people = people; return people end
+  for i = 1, GetNumBattlefieldScores() do
+    local name, kb, _, deaths, _, faction, _, _, _, classToken, damage, healing =
+      GetBattlefieldScore(i)
+    if name then
+      damage, healing = damage or 0, healing or 0
+      local role = nil
+      if healing > 0 and healing > damage then role = "healer"
+      elseif damage > 0 then role = "damage" end
+      people[name] = { classToken = classToken, faction = faction, role = role,
+                       damage = damage, healing = healing,
+                       killingBlows = kb or 0, deaths = deaths or 0 }
     end
-    roster[name] = 0                      -- present: reset the miss counter
   end
+  self.people = people
+  return people
+end
 
-  for name, misses in pairs(roster) do
-    if now[name] == nil then
+function N:Identity(name)
+  return name and self.people and self.people[name] or nil
+end
+
+-- Present/absent diff with the two-miss rule, for either side's roster.
+local function diffRoster(tbl, present)
+  local joined, left = {}, {}
+  for name in pairs(present) do
+    if tbl[name] == nil then joined[#joined + 1] = name end
+    tbl[name] = 0                         -- present: reset the miss counter
+  end
+  for name, misses in pairs(tbl) do
+    if present[name] == nil then
       misses = misses + 1
       if misses >= MISSES_BEFORE_LEFT then
         left[#left + 1] = name
-        roster[name] = nil
+        tbl[name] = nil
       else
-        roster[name] = misses
+        tbl[name] = misses
       end
     end
   end
-
   table.sort(joined)
   table.sort(left)
+  return joined, left
+end
+
+function N:PollRoster()
+  self:ScanAll()
+  local now = self:ScanEnemies()
+  local joined, left = diffRoster(roster, now)
+
+  local team = {}
+  for _, r in ipairs(self:ScanTeam()) do team[r.name] = true end
+  local teamJoined, teamLeft = diffRoster(teamRoster, team)
 
   -- The first scan is the whole enemy team arriving at once. Announcing all
   -- fifteen as "joined" is noise, so the generic line is suppressed -- but a
@@ -137,6 +232,11 @@ function N:PollRoster()
   -- useful at the start, not only if they happen to reconnect later.
   local firstScan = not seenRoster
   seenRoster = true
+  -- Logged at the first real scan, not on the entering event: by now the
+  -- zone name is the battleground's, not the one we ported out of.
+  if firstScan then
+    self:Log("match", nil, "Entered " .. ((GetRealZoneText and GetRealZoneText()) or "the battleground"))
+  end
 
   for i = 1, #joined do
     local name = joined[i]
@@ -144,15 +244,94 @@ function N:PollRoster()
     if self:IsNemesis(name) then
       LP:Fire("NEMESIS_SPOTTED", name)
       self:Alert("nemesis", name .. " is here")
+      self:Log("nemesis", name, name .. " (your nemesis) is here")
     elseif not firstScan then
       self:Alert("joined", name .. " joined")
+      self:Log("joined", name, name .. " joined")
     end
   end
   for i = 1, #left do
     LP:Fire("ENEMY_LEFT", left[i])
+    self:Log("left", left[i], left[i] .. " left")
   end
+  -- Your own side is logged, never announced: fifteen "joined" lines about
+  -- your own team at the start of a match is noise.
+  if not firstScan then
+    for i = 1, #teamJoined do self:Log("joined", teamJoined[i], teamJoined[i] .. " joined your team") end
+  end
+  for i = 1, #teamLeft do self:Log("left", teamLeft[i], teamLeft[i] .. " left your team") end
 
   return joined, left
+end
+
+-- ---------------------------------------------------------------------------
+-- The match log
+-- ---------------------------------------------------------------------------
+
+-- Match clock as the scoreboard shows it. Milliseconds (WorldStateFrame.lua:824).
+local function matchClock()
+  local ms = GetBattlefieldInstanceRunTime and GetBattlefieldInstanceRunTime() or 0
+  if not ms or ms <= 0 then return nil end
+  local s = math.floor(ms / 1000)
+  return string.format("%d:%02d", math.floor(s / 60), s % 60)
+end
+
+function N:Log(kind, who, text)
+  local e = { kind = kind, who = who, text = text, at = matchClock(),
+              t = (GetTime and GetTime()) or 0 }
+  local id = self:Identity(who)
+  if id then e.classToken, e.faction, e.role = id.classToken, id.faction, id.role end
+  self.log[#self.log + 1] = e
+  while #self.log > MAX_LOG do table.remove(self.log, 1) end
+  LP:Fire("BG_LOG", e)
+  return e
+end
+
+function N:LogEntries() return self.log end
+function N:LogColour(kind) return LOG_COLOUR[kind] end
+function N:UnattributedDeaths() return unattributedDeaths end
+
+function N:ClassIcon(token)
+  local c = token and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[token]
+  if not c then return "" end
+  return string.format("|T%s:14:14:0:0:256:256:%d:%d:%d:%d|t", CLASS_SHEET,
+    math.floor(c[1] * 256 + 0.5), math.floor(c[2] * 256 + 0.5),
+    math.floor(c[3] * 256 + 0.5), math.floor(c[4] * 256 + 0.5))
+end
+
+function N:ColourName(name, token)
+  local col = token and RAID_CLASS_COLORS and RAID_CLASS_COLORS[token]
+  if not col then return name end
+  return string.format("|cff%02x%02x%02x%s|r",
+    math.floor(col.r * 255 + 0.5), math.floor(col.g * 255 + 0.5),
+    math.floor(col.b * 255 + 0.5), name)
+end
+
+-- The server's own sentence, with the player's name replaced by class icon,
+-- role icon and class-coloured name. Plain find: names have no pattern chars,
+-- but a name is never treated as a pattern regardless.
+function N:Describe(e)
+  local text = e.text or ""
+  local who = e.who
+  if not who then return text end
+  local tag = self:ClassIcon(e.classToken) .. (ROLE_ICON[e.role or ""] or "")
+              .. self:ColourName(who, e.classToken)
+  -- Whole word only: "Ali" must not be found inside "Alliance". Plain find,
+  -- then both edges are checked; the last whole-word hit wins because the
+  -- server's sentences end with the name.
+  local best, init = nil, 1
+  while true do
+    local s, f = string.find(text, who, init, true)
+    if not s then break end
+    local before = (s > 1) and string.sub(text, s - 1, s - 1) or " "
+    local after = string.sub(text, f + 1, f + 1)
+    if not string.find(before, "%w") and (after == "" or not string.find(after, "%w")) then
+      best = { s, f }
+    end
+    init = f + 1
+  end
+  if not best then return text end
+  return string.sub(text, 1, best[1] - 1) .. tag .. string.sub(text, best[2] + 1)
 end
 
 -- ---------------------------------------------------------------------------
@@ -172,8 +351,7 @@ end
 function N:ScanTeam()
   local out = {}
   if not GetNumBattlefieldScores or not GetBattlefieldScore then return out end
-  local mine = UnitFactionGroup and UnitFactionGroup("player")
-  local want = (mine == "Horde") and FACTION_HORDE or FACTION_ALLIANCE
+  local want = self:MyTeam()
   for i = 1, GetNumBattlefieldScores() do
     -- damageDone is return 11, healingDone is 12 (WorldStateFrame.lua:662).
     local name, kb, _, deaths, _, faction, _, _, _, _, damage, healing =
@@ -249,12 +427,21 @@ function N:RecordKill(name)
   end
   LP:Fire("NEMESIS_KILL", name, currentStreak)
   self:Alert("kill", "Killed " .. name)
+  self:Log("kill", name, "You killed " .. name)
 end
 
 function N:RecordDeath(name)
   local r = self:Record(name)
   if r then r.deaths = r.deaths + 1 end
   currentStreak = 0
+  if name then
+    self:Log("death", name, name .. " killed you")
+  elseif self:InBattleground() then
+    -- A pet, a totem, or fall damage: nobody to blame, but the death is real
+    -- and the empty nemesis list must be able to explain itself.
+    unattributedDeaths = unattributedDeaths + 1
+    self:Log("death", nil, "You died (no player landed the last hit)")
+  end
   LP:Fire("NEMESIS_DEATH", name)
   self:Alert("death", name and ("Killed by " .. name) or "Died")
 end
@@ -346,6 +533,7 @@ function N:OnBGChat(msg)
       local e = { action = p.action, who = who, text = msg }
       LP:Fire("BG_FLAG", e)
       self:Alert("flag", msg)
+      self:Log("flag", who, msg)
       return e
     end
   end
@@ -390,12 +578,12 @@ function N:CheckWinner()
   local winner = GetBattlefieldWinner()
   if winner == nil then return nil end
   if IsActiveBattlefieldArena and IsActiveBattlefieldArena() then return nil end
-  local mine = UnitFactionGroup and UnitFactionGroup("player")
-  if not mine then return nil end
   matchRecorded = true
-  local won = (winner == 1 and mine == "Alliance") or (winner == 0 and mine == "Horde")
+  -- The side I played FOR, which under mercenary mode is not my faction.
+  local won = (winner == self:MyTeam())
   local bg = (GetRealZoneText and GetRealZoneText()) or "unknown"
   self:RecordResult(bg, won)
+  self:Log("result", nil, won and "Victory" or "Defeat")
   -- Keep the final standing. The live meters vanish with the scoreboard the
   -- moment you leave, and a healer's whole match is in them.
   local d = db()
@@ -560,6 +748,13 @@ function N:Dashboard()
   if live then
     rows[#rows + 1] = { kind = "header", text = "This battleground" }
     standingRows(rows, live, true)
+  elseif self:InBattleground() then
+    -- In a match, no scoreboard yet. It is requested every few seconds; this
+    -- should last moments, and if it does not, the player can force it.
+    rows[#rows + 1] = { kind = "header", text = "This battleground" }
+    -- Two short rows: the panel draws one unwrapped line per row.
+    rows[#rows + 1] = { kind = "empty", text = "Waiting for the scoreboard (requested; a few seconds)." }
+    rows[#rows + 1] = { kind = "empty", text = "If it never fills in, open the scoreboard once (H)." }
   else
     -- The scoreboard, and the live meters with it, is gone the moment you
     -- leave. The final standing was saved when the match ended.
@@ -598,8 +793,19 @@ function N:Dashboard()
     end
     rows[#rows + 1] = { kind = "list", title = "Top nemeses", items = items }
   else
-    rows[#rows + 1] = { kind = "empty",
-      text = "No nemeses yet -- nobody is ahead of you." }
+    -- A nemesis is someone who has killed you more than you killed them, so
+    -- a healer who never died has none -- and that is not a fault. When you
+    -- DID die and nobody was blamed, say why rather than leaving a blank.
+    local why = "nobody has killed you more than you have killed them."
+    if unattributedDeaths > 0 then
+      why = string.format("you died %d time(s) %s with no player on the last hit.",
+          unattributedDeaths, self:InBattleground() and "this match" or "last match")
+    end
+    rows[#rows + 1] = { kind = "empty", text = "No nemeses yet -- " .. why }
+    if unattributedDeaths > 0 then
+      rows[#rows + 1] = { kind = "empty",
+        text = "(pets, totems and falls do not count, so nobody could be blamed)" }
+    end
   end
 
   -- Achievements, newest first, with their icons.
@@ -696,9 +902,20 @@ LP:RegisterModule({
 
     -- Arenas share the scoreboard API but not the point of any of this.
     N.pollJob = LP:Schedule(POLL_SECONDS, function()
-      if IsActiveBattlefieldArena and IsActiveBattlefieldArena() then return end
-      if not GetNumBattlefieldScores or GetNumBattlefieldScores() == 0 then return end
-      N:PollRoster()
+      if not N:InBattleground() then return end
+      -- Ask BEFORE looking. The scoreboard is empty until something requests
+      -- it from the server, and this used to request only once scores
+      -- existed -- so nothing appeared until the player opened Blizzard's
+      -- scoreboard by hand once. (Blizzard's frame requests it every single
+      -- frame while open; every few seconds is polite.)
+      -- ...but NOT once the match is decided. Every score update makes
+      -- Blizzard's WorldStateScoreFrame_Update show the final scoreboard
+      -- again (WorldStateFrame.lua:513, no is-shown check), so requesting
+      -- after the end would re-open it every three seconds after the player
+      -- closed it. The final data is static; nothing is lost by stopping.
+      if GetBattlefieldWinner and GetBattlefieldWinner() ~= nil then return end
+      if RequestBattlefieldScoreData then RequestBattlefieldScoreData() end
+      if GetNumBattlefieldScores and GetNumBattlefieldScores() > 0 then N:PollRoster() end
     end)
   end,
 

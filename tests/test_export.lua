@@ -68,6 +68,23 @@ h.run("enabling sharing produces a JSON payload", function()
   h.ok(js:sub(1,1) == "[", "top level is an array of characters")
 end)
 
+h.run("the character's level is never below a finished level plus one", function()
+  -- On 3.3.5a UnitLevel("player") is still the OLD level when PLAYER_LEVEL_UP
+  -- fires, which is when the export runs: a real board showed "lvl 5" beside
+  -- five finished levels.
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  h.state.level = 71                       -- what UnitLevel says at that instant
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 500 experience.")
+  h.advance(50)
+  LP.History:OnLevelUp(72)                 -- level 71 is finished
+  LP.Export:Write()
+  local js = LP.gdb.exportJSON
+  h.ok(js:find('"level":72', 1, true), "exported as 72, not the stale 71")
+  h.ok(not js:find('"level":70', 1, true), "and nothing lower")
+end)
+
 -- The JSON must be extractable with a regex, not a Lua parser -- that is the
 -- entire point of it existing.
 h.run("payload round-trips through a real JSON parser", function()

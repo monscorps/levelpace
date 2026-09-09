@@ -101,16 +101,70 @@ function Parse:LoadGeneratedBaseline(forLevel)
   return nil
 end
 
+-- Returns list, label, isGlobal. Only a GLOBAL baseline -- other players --
+-- is a ranking. Your own past levels are still returned as a comparison, but
+-- flagged, because a percentile against yourself is not a parse: a level 6
+-- whose levels 1-4 took a minute each was shown a grey "Common" for pacing
+-- slower than that, with nobody else on the board at all.
 function Parse:Baseline(forLevel)
-  if self.baseline then return self.baseline, self.baselineLabel end
+  if self.baseline then return self.baseline, self.baselineLabel, true end
 
   local global, glabel = self:LoadGeneratedBaseline(forLevel)
-  if global then return global, glabel end
+  if global then return global, glabel, true end
   -- Same-level comparison is fairer but rarely has enough samples on one
   -- character, so fall back to all levels.
   local same = self:PersonalBaseline(forLevel)
-  if #same >= self.MIN_BASELINE then return same, "your level " .. tostring(forLevel) end
-  return self:PersonalBaseline(nil), "your past levels"
+  if #same >= self.MIN_BASELINE then return same, "your level " .. tostring(forLevel), false end
+  return self:PersonalBaseline(nil), "your past levels", false
+end
+
+-- How many OTHER players the global baseline holds for this level, for the
+-- "nobody else yet" wording. Nil when no baseline file exists at all.
+function Parse:GlobalSampleCount(forLevel)
+  local b = _G.LevelPaceBaseline
+  if type(b) ~= "table" then return nil end
+  local byLevel = forLevel and b.byLevel and b.byLevel[forLevel]
+  if type(byLevel) == "table" then return #byLevel end
+  return 0
+end
+
+-- Every finished level against everyone else's time at that level: the
+-- per-level parse, newest first. Numbers come from Baseline.lua, written by
+-- the companion, so this fills in as the board does. Your own row is on the
+-- board too once uploaded; if it is not there yet it is added, so the n-1
+-- divisor always means "everyone else".
+function Parse:LevelParses(limit)
+  local H = LP.History
+  if not H then return {} end
+  local b = _G.LevelPaceBaseline
+  local byLevel = type(b) == "table" and type(b.byLevel) == "table" and b.byLevel or {}
+  local all = H:All()
+  local out = {}
+  for i = #all, 1, -1 do
+    local r = all[i]
+    if r.level and r.elapsed and r.elapsed >= 1 then
+      -- The SAME integer the board holds: the export floors elapsed
+      -- (Export.lua), the companion writes the board's figure to 4 decimals.
+      -- Ranking the raw float against that never matched our own row, so it
+      -- was counted twice and every percentile came out low.
+      local value = 3600 / math.floor(r.elapsed)
+      local list, seen = {}, false
+      for _, v in ipairs(byLevel[r.level] or {}) do
+        list[#list + 1] = v
+        if math.abs(v - value) < 1e-3 then seen = true end
+      end
+      if not seen then list[#list + 1] = value end
+      -- Same floor as the live gauge: under MIN_BASELINE a percentile is
+      -- noise dressed up as precision, and it must not get a colour.
+      local pct = (#list >= self.MIN_BASELINE) and LP.util.RankPercentile(value, list) or nil
+      out[#out + 1] = {
+        level = r.level, elapsed = r.elapsed, lph = value,
+        pct = pct, band = pct and self:Band(pct) or nil, of = #list,
+      }
+      if limit and #out >= limit then break end
+    end
+  end
+  return out
 end
 
 -- ---------------------------------------------------------------------------
@@ -137,14 +191,20 @@ function Parse:PercentileOf(value, list)
 end
 
 -- Returns percentile, band, levelsPerHour, baselineLabel, sampleCount.
--- Percentile is nil when the baseline is too thin to mean anything.
+-- Percentile is nil when there is no ranking: no other players at this level
+-- on the board yet (fewer than MIN_BASELINE). Your own history is never
+-- scored as a parse.
 function Parse:Current()
   local lph = self:CurrentLevelsPerHour()
   if not lph then return nil end
   local level = (UnitLevel and UnitLevel("player")) or nil
-  local list, label = self:Baseline(level)
-  if #list < self.MIN_BASELINE then
-    return nil, nil, lph, label, #list
+  local list, label, global = self:Baseline(level)
+  if not global or #list < self.MIN_BASELINE then
+    local others = self:GlobalSampleCount(level) or 0
+    return nil, nil, lph,
+      string.format("nobody else at level %s on the board yet (%d of %d needed)",
+        tostring(level or "?"), others, self.MIN_BASELINE),
+      others
   end
   local pct = self:PercentileOf(lph, list)
   return pct, self:Band(pct), lph, label, #list
@@ -154,11 +214,7 @@ end
 function Parse:Text()
   local pct, band, lph, label, n = self:Current()
   if not pct then
-    if lph then
-      return string.format("|cff888888needs %d more level%s|r",
-        self.MIN_BASELINE - (n or 0),
-        (self.MIN_BASELINE - (n or 0)) == 1 and "" or "s")
-    end
+    if lph then return "|cff888888no parse yet|r" end
     return "|cff888888--|r"
   end
   return self:Colorize(pct, string.format("%d", math.floor(pct + 0.5)))

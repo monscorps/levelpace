@@ -565,4 +565,252 @@ h.run("the final standing survives leaving the battleground", function()
   h.state.bgWinner = nil
 end)
 
+-- ==== the scoreboard must be asked for, not waited for ====
+--
+-- Reported from the game: "I need to open the BG scoreboard once for stats to
+-- load." The poll requested score data only once scores existed -- which only
+-- happened after Blizzard's own scoreboard, opened by hand, requested them.
+
+h.run("the scoreboard is requested before any scores exist", function()
+  h.state.instanceType = "pvp"
+  h.state.bgScores = {}
+  h.state.bgWinner = nil
+  local LP, N = load()
+  h.state.scoreRequests = 0
+  LP:_Tick(3)
+  h.ok((h.state.scoreRequests or 0) >= 1, "asked the server with an empty scoreboard")
+  h.state.instanceType = nil
+end)
+
+h.run("nothing is requested once the match is decided", function()
+  -- Every score update re-shows Blizzard's final scoreboard
+  -- (WorldStateFrame.lua:513). Requesting after the end would pop it back
+  -- up every three seconds after the player closed it.
+  h.state.instanceType = "pvp"
+  h.state.bgScores = { { name = "Me", faction = 1 } }
+  h.state.bgWinner = 1
+  local LP, N = load()
+  h.state.scoreRequests = 0
+  LP:_Tick(3); LP:_Tick(3)
+  h.eq(h.state.scoreRequests, 0, "no request after the winner is known")
+  h.state.bgWinner = nil; h.state.instanceType = nil
+end)
+
+h.run("nothing is requested outside a battleground", function()
+  h.state.instanceType = nil
+  h.state.bgScores = {}
+  local LP, N = load()
+  h.state.scoreRequests = 0
+  LP:_Tick(3)
+  h.eq(h.state.scoreRequests, 0, "no request outside")
+end)
+
+h.run("the dashboard says it is waiting when in a match with no scoreboard yet", function()
+  h.state.instanceType = "pvp"
+  h.state.bgScores = {}
+  local LP, N = load()
+  local waiting = nil
+  for _, r in ipairs(N:Dashboard()) do
+    if r.kind == "empty" and r.text:find("Waiting for the scoreboard", 1, true) then waiting = r end
+  end
+  h.ok(waiting, "explains the empty section")
+  local fallback = nil
+  for _, r in ipairs(N:Dashboard()) do
+    if r.kind == "empty" and r.text:find("open the scoreboard once", 1, true) then fallback = r end
+  end
+  h.ok(fallback, "and the manual fallback, on its own short row")
+  h.ok(#waiting.text <= 60 and #fallback.text <= 60, "rows short enough not to run off the panel")
+  h.state.instanceType = nil
+end)
+
+-- ==== the match log ====
+
+local function scoreboard()
+  h.state.faction = "Alliance"
+  h.state.bgScores = {
+    { name = "Me",     faction = 1, classToken = "PRIEST",  damageDone = 100,  healingDone = 9000 },
+    { name = "Mate",   faction = 1, classToken = "WARRIOR", damageDone = 5000, healingDone = 0 },
+    { name = "Sneaky", faction = 0, classToken = "ROGUE",   damageDone = 7000, healingDone = 0 },
+    { name = "Healbot", faction = 0, classToken = "SHAMAN", damageDone = 200,  healingDone = 4000 },
+  }
+end
+
+h.run("a new match starts an empty log with an 'entered' line", function()
+  h.state.instanceType = "pvp"; h.state.zone = "Warsong Gulch"; h.state.bgRunTimeMS = 0
+  scoreboard()
+  local LP, N = load()
+  N:Log("kill", "Sneaky", "You killed Sneaky")
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  h.eq(#N:LogEntries(), 0, "old entries gone")
+  N:PollRoster()                             -- the first real scan of the match
+  local log = N:LogEntries()
+  h.eq(#log, 1, "one line so far")
+  h.eq(log[1].kind, "match", "the entered line")
+  h.eq(log[1].text, "Entered Warsong Gulch", "names the battleground we are in NOW")
+  h.state.instanceType = nil
+end)
+
+h.run("joins, leaves, flags, kills and deaths land in the log with the match clock", function()
+  h.state.instanceType = "pvp"; h.state.bgRunTimeMS = 65000
+  scoreboard()
+  local LP, N = load()
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  N:PollRoster()                               -- first scan: nobody "joined"
+  local kinds = {}
+  for _, e in ipairs(N:LogEntries()) do kinds[#kinds + 1] = e.kind end
+  h.eq(#N:LogEntries(), 1, "the first scan of the whole roster is not logged")
+
+  h.state.bgScores[#h.state.bgScores + 1] = { name = "Late", faction = 0, classToken = "MAGE" }
+  N:PollRoster()
+  h.state.bgScores[5] = nil                    -- Late vanishes
+  N:PollRoster(); N:PollRoster()               -- two misses = left
+  N:OnBGChat("The Alliance Flag was picked up by Sneaky!")
+  N:RecordKill("Sneaky")
+  N:RecordDeath("Healbot")
+
+  local log = N:LogEntries()
+  local seq = {}
+  for i = 2, #log do seq[#seq + 1] = log[i].kind .. ":" .. tostring(log[i].who) end
+  h.eq(table.concat(seq, " "), "joined:Late left:Late flag:Sneaky kill:Sneaky death:Healbot", "in order")
+  h.eq(log[2].at, "1:05", "stamped with the scoreboard's match clock")
+  h.eq(log[3].kind, "left", "the leaver")
+  h.eq(log[3].classToken, "MAGE", "still knows a leaver's class after they are off the scoreboard")
+  h.eq(log[4].classToken, "ROGUE", "identity comes from the scoreboard")
+  h.eq(log[4].role, "damage", "role inferred: damage")
+  h.eq(log[6].role, "healer", "role inferred: healer (healing above damage)")
+  h.state.instanceType = nil
+end)
+
+h.run("your own team's comings and goings are logged but never announced", function()
+  h.state.instanceType = "pvp"
+  scoreboard()
+  local LP, N = load()
+  local alerts = 0
+  LP.Nemesis.Alert = function() alerts = alerts + 1 end
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  N:PollRoster()
+  h.state.bgScores[#h.state.bgScores + 1] = { name = "Newmate", faction = 1, classToken = "DRUID" }
+  N:PollRoster()
+  local last = N:LogEntries()[#N:LogEntries()]
+  h.eq(last.text, "Newmate joined your team", "logged")
+  h.eq(alerts, 0, "not announced")
+  h.state.instanceType = nil
+end)
+
+h.run("Describe colours the name by class and prefixes class and role icons", function()
+  h.state.instanceType = "pvp"
+  scoreboard()
+  local LP, N = load()
+  N:ScanAll()
+  local e = N:Log("flag", "Healbot", "The Alliance Flag was picked up by Healbot!")
+  local s = N:Describe(e)
+  h.ok(s:find("|cff0070deHealbot|r", 1, true), "shaman class colour (0.0,0.44,0.87) -> 00 70 de around the name")
+  h.ok(s:find("Interface\\WorldStateFrame\\Icons-Classes:14:14:0:0:256:256:64:127:64:128|t", 1, true),
+       "shaman class icon from the scoreboard's own sheet, in sheet pixels")
+  h.ok(s:find("UI-LFG-ICON-PORTRAITROLES:14:14:0:0:64:64:20:39:1:20|t", 1, true), "healer role icon")
+  h.ok(s:find("^The Alliance Flag was picked up by ") and s:find("!$"), "the server's sentence is kept around it")
+
+  local plain = N:Describe({ kind = "result", text = "Victory" })
+  h.eq(plain, "Victory", "no name, nothing to decorate")
+  local unknown = N:Describe({ kind = "kill", who = "Ghost", text = "You killed Ghost" })
+  h.eq(unknown, "You killed Ghost", "a name the scoreboard never listed stays plain")
+
+  -- "Ali" appears inside "Alliance" before it appears as a name.
+  h.state.bgScores[#h.state.bgScores + 1] = { name = "Ali", faction = 0, classToken = "MAGE" }
+  N:ScanAll()
+  local ali = N:Describe(N:Log("flag", "Ali", "The Alliance Flag was picked up by Ali!"))
+  h.ok(ali:find("^The Alliance Flag was picked up by |T", 1, false), "'Alliance' left intact: " .. ali)
+  h.ok(ali:find("Ali|r!$"), "the name at the end is the one decorated")
+  h.state.instanceType = nil
+end)
+
+h.run("a death with no player to blame is counted and explained", function()
+  h.state.instanceType = "pvp"
+  scoreboard()
+  local LP, N = load()
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  N:RecordDeath(nil)
+  h.eq(N:UnattributedDeaths(), 1, "counted")
+  local empty = nil
+  for _, r in ipairs(N:Dashboard()) do
+    if r.kind == "empty" and r.text:find("No nemeses yet", 1, true) then empty = r end
+  end
+  h.ok(empty, "still no nemesis")
+  h.ok(empty.text:find("died 1 time", 1, true), "says how many times you died unblamed")
+  h.state.instanceType = nil
+end)
+
+h.run("a healer who never died has no nemesis, and that is said plainly", function()
+  h.state.instanceType = "pvp"
+  scoreboard()
+  local LP, N = load()
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  local empty = nil
+  for _, r in ipairs(N:Dashboard()) do
+    if r.kind == "empty" and r.text:find("No nemeses yet", 1, true) then empty = r end
+  end
+  h.ok(empty and empty.text:find("nobody has killed you", 1, true), "not a fault")
+  h.state.instanceType = nil
+end)
+
+h.run("the log is capped", function()
+  h.state.instanceType = "pvp"
+  local LP, N = load()
+  for i = 1, 350 do N:Log("kill", nil, "x" .. i) end
+  h.eq(#N:LogEntries(), 300, "capped at 300")
+  h.eq(N:LogEntries()[300].text, "x350", "newest kept")
+  h.state.instanceType = nil
+end)
+
+-- ==== mercenary mode ====
+--
+-- Private servers let an Alliance character fill a Horde slot and play FOR
+-- the Horde. UnitFactionGroup still says "Alliance"; the scoreboard lists
+-- them under the Horde. "My team" must come from the scoreboard.
+
+h.run("mercenary mode: my team is the side the scoreboard puts me on", function()
+  h.state.instanceType = "pvp"; h.state.bgWinner = nil
+  h.state.faction = "Alliance"                       -- home faction
+  h.state.playerName = "Me"
+  h.state.bgScores = {
+    { name = "Me",      faction = 0, classToken = "PRIEST", healingDone = 5000 },  -- listed as Horde
+    { name = "Orcmate", faction = 0, classToken = "WARRIOR", damageDone = 3000 },
+    { name = "Human",   faction = 1, classToken = "PALADIN", damageDone = 9000 },
+  }
+  local LP, N = load()
+  h.eq(N:MyTeam(), 0, "Horde, as the scoreboard says")
+  local team = N:ScanTeam()
+  h.eq(#team, 2, "my team is the Horde rows")
+  local enemies = N:ScanEnemies()
+  h.ok(enemies["Human"] and not enemies["Orcmate"], "the Alliance row is the enemy")
+  local r = N:TeamRanking()
+  h.eq(r.healing.participating, true, "ranked among my (Horde) team")
+
+  bgEvent(LP, "PLAYER_ENTERING_BATTLEGROUND")
+  h.state.bgWinner = 0                                -- Horde wins
+  bgEvent(LP, "UPDATE_BATTLEFIELD_SCORE")
+  local s = N:Lifetime()
+  h.eq(s.wins, 1, "a Horde win is MY win as a mercenary")
+  h.eq(s.losses, 0, "not a loss")
+  h.state.bgWinner = nil; h.state.instanceType = nil; h.state.faction = "Alliance"; h.state.playerName = nil
+end)
+
+h.run("cross-realm rows ('Name-Realm') still identify me", function()
+  h.state.faction = "Alliance"
+  h.state.playerName = "Me"
+  h.state.bgScores = { { name = "Me-Icecrown", faction = 0 }, { name = "Other", faction = 1 } }
+  local LP, N = load()
+  h.eq(N:MyTeam(), 0, "matched on the name before the dash")
+  h.state.playerName = nil
+end)
+
+h.run("before the scoreboard arrives, the home faction is the fallback", function()
+  h.state.faction = "Horde"
+  h.state.bgScores = {}
+  local LP, N = load()
+  h.eq(N:MyTeam(), 0, "Horde")
+  h.state.faction = "Alliance"
+  h.eq(N:MyTeam(), 1, "Alliance")
+end)
+
 os.exit(h.report() and 0 or 1)

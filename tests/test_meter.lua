@@ -119,13 +119,15 @@ h.run("the healing view lists only players who healed", function()
   h.eq(rows[1].name, "Healer", "the healer")
 end)
 
-h.run("outside a battleground the bg views are empty, not broken", function()
+h.run("outside a battleground the bg views say so, rather than break", function()
+  h.state.instanceType = nil
   local LP, M = boot()
   h.state.bgScores = {}
   M:Select("bgdamage")
-  h.eq(#M:Rows(), 0, "empty")
+  h.eq(#M:Rows(), 1, "one line: the reason")
+  h.eq(M:Rows()[1].name, "not in a battleground", "says why")
   M:Select("bghealing")
-  h.eq(#M:Rows(), 0, "empty")
+  h.eq(M:Rows()[1].name, "not in a battleground", "same for healing")
 end)
 
 -- ==== visibility and cost ====
@@ -168,6 +170,51 @@ h.run("size is clamped to something usable", function()
   M:SetSize(10, 10)
   h.ok(LP.db.profile.meter.width >= M.MIN_WIDTH, "not narrower than MIN_WIDTH")
   h.ok(LP.db.profile.meter.height >= M.MIN_HEIGHT, "not shorter than MIN_HEIGHT")
+end)
+
+-- ==== BG log view ====
+
+h.run("the BG log view sits right after BG damage", function()
+  local LP, M = boot()
+  local ids = {}
+  for i, v in ipairs(M:Views()) do ids[v.id] = i end
+  h.eq(ids.bglog, ids.bgdamage + 1, "one click from the damage view")
+end)
+
+h.run("the BG log lists newest first, stamped with the match clock", function()
+  h.state.instanceType = "pvp"; h.state.bgRunTimeMS = 65000
+  local LP, M = boot()
+  local N = LP.Nemesis
+  N:Log("joined", "Late", "Late joined")
+  h.state.bgRunTimeMS = 130000
+  N:Log("kill", "Sneaky", "You killed Sneaky")
+  M:Select("bglog")
+  local rows = M:Rows()
+  h.eq(#rows, 2, "two entries")
+  h.eq(rows[1].name, "You killed Sneaky", "newest first")
+  h.eq(rows[1].label, "2:10", "match clock on the right")
+  h.eq(rows[2].label, "1:05", "older below")
+  h.eq(rows[1].fill, 0, "no bar on a log line")
+  h.ok(rows[1].band and rows[1].band.r, "coloured by kind")
+  h.state.instanceType = nil
+end)
+
+h.run("empty views say why they are empty", function()
+  h.state.instanceType = nil
+  h.state.bgScores = {}
+  local LP, M = boot()
+  M:Select("bgdamage")
+  h.eq(M:Rows()[1].name, "not in a battleground", "outside")
+  h.state.instanceType = "pvp"
+  h.ok(M:Rows()[1].name:find("waiting for the scoreboard", 1, true), "inside, before scores arrive")
+  M:Select("bglog")
+  h.eq(M:Rows()[1].name, "nothing has happened yet", "log: inside, nothing yet")
+  -- Loaded, and simply nobody has healed: a different fact from "loading".
+  h.state.bgScores = { { name = "Me", faction = 1, damageDone = 10, healingDone = 0 } }
+  M:Select("bghealing")
+  h.eq(M:Rows()[1].name, "nobody on your team has any yet", "loaded but empty says so")
+  h.state.bgScores = {}
+  h.state.instanceType = nil
 end)
 
 os.exit(h.report() and 0 or 1)

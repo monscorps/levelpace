@@ -33,6 +33,26 @@ local function Dashboard()
   local lvl = (UnitLevel and UnitLevel("player")) or nil
   if lvl then rows[#rows + 1] = { kind = "stat", label = "Level", value = lvl } end
 
+  -- Every finished level against everyone else's time at that level -- the
+  -- per-level parse, newest first. Before the max-level return on purpose:
+  -- an 80 who levelled with the addon still has these.
+  local ranked = LP.Parse and LP.Parse.LevelParses and LP.Parse:LevelParses(12) or {}
+  if #ranked > 0 then
+    local items = {}
+    for _, p in ipairs(ranked) do
+      items[#items + 1] = {
+        text = string.format("Level %d   %s   %.2f lvl/hr", p.level,
+                             util.FormatTime(p.elapsed), p.lph),
+        sub = p.pct and string.format("%d%%  %s  (of %d at this level)",
+                                      math.floor(p.pct + 0.5), p.band.name, p.of)
+              or (p.of > 1 and string.format("%d of %d needed at this level", p.of, LP.Parse.MIN_BASELINE)
+                  or "nobody else at this level yet"),
+        colour = p.band,
+      }
+    end
+    rows[#rows + 1] = { kind = "list", title = "Your levels, ranked", items = items }
+  end
+
   if r.maxLevel then
     rows[#rows + 1] = { kind = "empty", text = "Max level -- nothing left to project." }
     return rows

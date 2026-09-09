@@ -8,6 +8,41 @@ Works on any 3.3.5a private server. No account, no sign-up, no email.
 
 ---
 
+## New in 0.9.18 — battleground stats without opening the scoreboard, and a match log
+
+- **You no longer have to open the scoreboard once.** The addon only asked the
+  server for scoreboard data once some already existed — which happened only
+  after *you* opened Blizzard's scoreboard. It now asks every few seconds from
+  the moment you are in a battleground. While it waits, the dashboard and the
+  meter say so instead of sitting empty.
+- **BG log** — a new meter view, one click from *BG damage* (click the meter's
+  header to switch): who joined and left (both sides), who picked up, dropped,
+  captured or returned a flag, who you killed and who killed you, and the
+  result — newest first, stamped with the match clock. Names are in their
+  class colour with a class icon and a role icon. The role is *inferred*
+  (healing above damage on the scoreboard = healer): the 3.3.5a client tells
+  addons a player's class, never their spec, and enemies cannot be inspected.
+- **Empty nemesis list explained.** A nemesis is someone who has killed you
+  more than you killed them — dealing no damage does not matter, dying does.
+  If you died with no player landing the last hit (a pet, a totem, a fall),
+  the dashboard now says so and counts it instead of showing a blank.
+
+- **No more grey parse when nobody else is on the board.** The pace gauge
+  used to fall back to comparing you against your *own* earlier levels — so a
+  level 6 whose levels 1–4 took a minute each got a grey "Common". A parse
+  needs other players: until 3 or more are on the board at your level it now
+  says "no parse yet" and stays uncoloured. Rankings are per level, not per
+  class — the board is far too small to split by class.
+- **Your levels, ranked** — the LevelPace dashboard tab now lists every level
+  you have finished with your time, your levels/hour, and your percentile and
+  colour against everyone else's time *at that level* (from the board data the
+  companion brings back). "Nobody else at this level yet" where that is so.
+- The board no longer shows you one level lower than you are: the addon
+  exported the game's level number at the instant of the level-up, when it
+  still reads the old value.
+
+Only the addon zip changed; the companion is the same.
+
 ## Fixed in 0.9.17 — battleground wins and losses were never counted
 
 The dashboard's **Record: 0W 0L (since install)** stayed at zero no matter how

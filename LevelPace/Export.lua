@@ -154,7 +154,17 @@ function Export:Write()
     and opt("class", function() return (select(2, UnitClass("player"))) end) or nil
   blob.faction = share.shareFaction ~= false
     and opt("faction", function() return UnitFactionGroup and UnitFactionGroup("player") end) or nil
-  blob.level = opt("level", function() return UnitLevel and UnitLevel("player") end)
+  -- UnitLevel("player") still returns the OLD level at the instant
+  -- PLAYER_LEVEL_UP fires on 3.3.5a -- and that is exactly when this runs --
+  -- so a character with a finished level 5 went out labelled "level 5". A
+  -- finished level N means at least N+1, whatever UnitLevel says right now.
+  blob.level = opt("level", function()
+    local lvl = (UnitLevel and UnitLevel("player")) or 0
+    for _, r in ipairs(blob.levels or {}) do
+      if r.level and r.level + 1 > lvl then lvl = r.level + 1 end
+    end
+    return lvl > 0 and lvl or nil
+  end)
   blob.questRate = opt("questRate", function() return LP.Rates and LP.Rates:GetQuestRate() end)
   blob.questRateSource = opt("questRateSource", function() return LP.Rates and LP.Rates:QuestRateSource() end)
 

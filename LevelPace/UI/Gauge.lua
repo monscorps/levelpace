@@ -86,14 +86,11 @@ function Gauge:Update()
   local pct, band, lph, label, n = LP.Parse:Current()
 
   if not pct then
-    -- No baseline yet. Show an empty grey bar rather than implying a score.
+    -- No ranking yet: nobody else at this level on the board. An empty bar,
+    -- deliberately uncoloured -- grey is a parse band, and this is not one.
     self.bar:SetValue(0)
     self.bar:SetStatusBarColor(0.3, 0.3, 0.3, 1)
-    local need = LP.Parse.MIN_BASELINE - (n or 0)
-    self.text:SetText(lph
-      and string.format("|cff888888no baseline (%d more level%s)|r",
-            need, need == 1 and "" or "s")
-      or "|cff888888measuring...|r")
+    self.text:SetText(lph and "|cff888888no parse yet|r" or "|cff888888measuring...|r")
     self.text:SetTextColor(1, 1, 1)
     return
   end
@@ -116,9 +113,9 @@ function Gauge:ShowTooltip(owner)
       LP.Parse:Colorize(pct, string.format("%d  (%s)", math.floor(pct + 0.5), band.name)),
       0.65, 0.65, 0.7, 1, 1, 1)
   else
-    GameTooltip:AddLine("Not enough history to score yet.", 0.95, 0.85, 0.35)
-    GameTooltip:AddLine(string.format("Needs %d completed levels; you have %d.",
-      LP.Parse.MIN_BASELINE, n or 0), 0.65, 0.65, 0.7)
+    GameTooltip:AddLine("No ranking yet.", 0.95, 0.85, 0.35)
+    GameTooltip:AddLine(label or "--", 0.65, 0.65, 0.7)
+    GameTooltip:AddLine("Fills in as other players' levels reach the board.", 0.65, 0.65, 0.7)
   end
   if lph then
     GameTooltip:AddDoubleLine("Pace", string.format("%.2f levels/hr", lph),

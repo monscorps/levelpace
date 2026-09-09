@@ -83,11 +83,15 @@ h.run("no score until the baseline is deep enough", function()
   h.eq(pct, nil, "no percentile")
   h.eq(band, nil, "no band")
   h.ok(lph and lph > 0, "but the pace itself is known")
-  h.eq(n, 2, "reports how many samples it has")
+  h.eq(n, 0, "reports how many OTHER players it has, which is none")
 end)
 
-h.run("a fast pace scores high against your own history", function()
+-- Your own history is a comparison, never a parse. Reported from the game:
+-- a level 6 with nobody else on the board was shown a grey "Common" for
+-- pacing slower than its own one-minute levels 1-4.
+h.run("your own history never produces a parse, however fast you are", function()
   local LP = load()
+  _G.LevelPaceBaseline = nil
   h.state.xpMax = 100000
   completeLevels(LP, { 7200, 7200, 7200 })    -- three slow levels: 0.5 lvl/hr
   h.state.level = 75
@@ -95,14 +99,17 @@ h.run("a fast pace scores high against your own history", function()
   h.advance(10)
   LP.Ledger:OnChat("Ghoul dies, you gain 10000 experience.")  -- 1000 xp/s
   LP.Estimator:Refresh()
-  local pct, band = LP.Parse:Current()
-  h.ok(pct, "scored")
-  h.eq(pct, 100, "beats all three of your slow levels")
-  h.eq(band.key, "artifact", "gold parse")
+  local pct, band, lph, label, n = LP.Parse:Current()
+  h.eq(pct, nil, "no percentile without other players")
+  h.eq(band, nil, "no colour")
+  h.ok(lph and lph > 0, "the pace itself is still known")
+  h.ok(label:find("nobody else at level 75", 1, true), "says why: " .. tostring(label))
+  h.eq(n, 0, "zero others")
 end)
 
-h.run("a slow pace scores low", function()
+h.run("a slow pace against your own history is not grey either", function()
   local LP = load()
+  _G.LevelPaceBaseline = nil
   h.state.xpMax = 100000
   completeLevels(LP, { 600, 600, 600 })       -- three fast levels: 6 lvl/hr
   h.state.level = 75
@@ -111,8 +118,119 @@ h.run("a slow pace scores low", function()
   LP.Ledger:OnChat("Ghoul dies, you gain 100 experience.")
   LP.Estimator:Refresh()
   local pct, band = LP.Parse:Current()
-  h.eq(pct, 0, "beats none of them")
-  h.eq(band.key, "common", "grey parse")
+  h.eq(pct, nil, "not scored")
+  h.eq(band, nil, "not grey")
+end)
+
+h.run("other players at your level on the board make a real parse", function()
+  local LP = load()
+  h.state.xpMax = 100000
+  h.state.level = 75
+  LP.History:Reset()
+  -- Three other players at level 75: 0.5, 1 and 2 levels per hour.
+  _G.LevelPaceBaseline = { players = 3, overall = { 0.5, 1, 2 }, byLevel = { [75] = { 0.5, 1, 2 } } }
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 10000 experience.")  -- 1000 xp/s = 36 lvl/hr
+  LP.Estimator:Refresh()
+  local pct, band, lph, label, n = LP.Parse:Current()
+  h.eq(pct, 100, "faster than all three")
+  h.eq(band.key, "artifact", "gold")
+  h.ok(label:find("global, level 75", 1, true), "labelled as the global level-75 comparison")
+  h.eq(n, 3, "three samples")
+  _G.LevelPaceBaseline = nil
+end)
+
+h.run("two players at your level is not enough for a parse", function()
+  local LP = load()
+  h.state.xpMax = 100000
+  h.state.level = 75
+  LP.History:Reset()
+  _G.LevelPaceBaseline = { players = 2, overall = { 1, 2 }, byLevel = { [75] = { 1, 2 } } }
+  h.advance(10)
+  LP.Ledger:OnChat("Ghoul dies, you gain 10000 experience.")
+  LP.Estimator:Refresh()
+  local pct, band, lph, label, n = LP.Parse:Current()
+  h.eq(pct, nil, "below the minimum")
+  h.ok(label:find("(2 of 3 needed)", 1, true), "counts the others: " .. tostring(label))
+  _G.LevelPaceBaseline = nil
+end)
+
+-- ==== per-level parses for the dashboard ====
+
+h.run("each finished level is ranked against everyone else's time at that level", function()
+  local LP = load()
+  h.state.xpMax = 100000
+  completeLevels(LP, { 3600, 1800 })          -- level 71 in 1h (1 lvl/hr), level 72 in 30m (2 lvl/hr)
+  -- On the board: level 71 has three others at 0.5, 1.5 and 4; my own 1.0 is
+  -- not there yet. Level 72 has nobody.
+  _G.LevelPaceBaseline = { players = 3, overall = {}, byLevel = { [71] = { 0.5, 1.5, 4 } } }
+  local p = LP.Parse:LevelParses()
+  h.eq(#p, 2, "two finished levels")
+  h.eq(p[1].level, 72, "newest first")
+  h.eq(p[1].pct, nil, "nobody else at 72")
+  h.eq(p[1].of, 1, "just me")
+  h.eq(p[2].level, 71, "then 71")
+  h.near(p[2].lph, 1, 0.001, "one level per hour")
+  h.near(p[2].pct, 33.33, 0.1, "beat 1 of 3 others (n-1 divisor, self added)")
+  h.eq(p[2].band.key, "uncommon", "green")
+  h.eq(p[2].of, 4, "three others plus me")
+
+  -- Once my own row is on the board it is not counted twice.
+  _G.LevelPaceBaseline.byLevel[71] = { 0.5, 1.0, 1.5, 4 }
+  p = LP.Parse:LevelParses()
+  h.eq(p[2].of, 4, "still four")
+  h.near(p[2].pct, 33.33, 0.1, "same answer")
+  _G.LevelPaceBaseline = nil
+end)
+
+-- Found by review: GetTime() is fractional in game, the export FLOORS elapsed,
+-- and the board serves 3600/floor(elapsed) to 4 decimals. Ranking the raw
+-- float against that never matched our own row, so it was counted twice.
+h.run("a fractional elapsed still recognises its own row on the board", function()
+  local LP = load()
+  h.state.xpMax = 100000
+  h.state.level = 71
+  LP.History:Reset()
+  h.advance(1)
+  LP.Ledger:OnChat("Ghoul dies, you gain 1000 experience.")
+  h.advance(399.6)                              -- 400.6 s in total
+  LP.History:OnLevelUp(72)
+  -- The board's copy of that level: 3600/floor(400.6) = 9.0000, written 4 dp.
+  _G.LevelPaceBaseline = { players = 4, overall = {}, byLevel = { [71] = { 0.5, 1.5, 4, 9.0000 } } }
+  local p = LP.Parse:LevelParses()
+  h.eq(p[1].of, 4, "own row recognised, not appended a second time")
+  h.eq(p[1].pct, 100, "beats all three others")
+  h.eq(p[1].band.key, "artifact", "gold")
+  _G.LevelPaceBaseline = nil
+end)
+
+h.run("one other player at a level is not enough for a per-level parse", function()
+  local LP = load()
+  h.state.xpMax = 100000
+  completeLevels(LP, { 3600 })
+  _G.LevelPaceBaseline = { players = 1, overall = {}, byLevel = { [71] = { 0.5 } } }
+  local p = LP.Parse:LevelParses()
+  h.eq(p[1].of, 2, "one other plus me")
+  h.eq(p[1].pct, nil, "below MIN_BASELINE: no percentile")
+  h.eq(p[1].band, nil, "and no colour")
+  _G.LevelPaceBaseline = nil
+end)
+
+h.run("the LevelPace dashboard lists the ranked levels", function()
+  local LP = load()
+  h.load("LevelPace/Modules/LevelPace.lua")
+  h.state.xpMax = 100000
+  completeLevels(LP, { 3600 })
+  _G.LevelPaceBaseline = { players = 3, overall = {}, byLevel = { [71] = { 0.5, 1.5, 4 } } }
+  local rows = LP:GetModule("levelpace").Dashboard()
+  local list = nil
+  for _, r in ipairs(rows) do if r.kind == "list" and r.title == "Your levels, ranked" then list = r end end
+  h.ok(list, "the list is there")
+  h.ok(list.items[1].text:find("Level 71", 1, true), "names the level: " .. list.items[1].text)
+  h.ok(list.items[1].text:find("1h 0m", 1, true), "and its time")
+  h.ok(list.items[1].sub:find("33%  Uncommon  (of 4 at this level)", 1, true), "percentile, band, population: " .. list.items[1].sub)
+  h.eq(list.items[1].colour.key, "uncommon", "coloured by band")
+  _G.LevelPaceBaseline = nil
 end)
 
 -- The metric must be levels/hr, not xp/hr, or a high level always wins.
@@ -137,14 +255,14 @@ h.run("an external baseline overrides the personal one", function()
   h.advance(10)
   LP.Ledger:OnChat("Ghoul dies, you gain 10000 experience.")
   LP.Estimator:Refresh()
-  h.eq(select(1, LP.Parse:Current()), 100, "top of your own history")
+  h.eq(select(1, LP.Parse:Current()), nil, "own history alone is not a parse")
   -- A global distribution where everyone is much faster.
   LP.Parse:SetBaseline({ 100, 200, 300, 400 }, "global")
   local pct, band, _, label = LP.Parse:Current()
   h.eq(pct, 0, "middling against the world")
   h.eq(label, "global", "labelled so the UI can say what it compared against")
   LP.Parse:SetBaseline(nil)
-  h.eq(select(1, LP.Parse:Current()), 100, "cleared, back to personal")
+  h.eq(select(1, LP.Parse:Current()), nil, "cleared: no other players, no parse")
 end)
 
 h.run("no score at max level", function()

@@ -397,6 +397,17 @@ async function handleSubmit(req, env) {
       accepted.levels++;
     }
 
+    // The addon exports UnitLevel("player") on PLAYER_LEVEL_UP, and on 3.3.5a
+    // that still returns the OLD level at that instant -- so a character with
+    // a finished level 5 arrived labelled "level 5". A finished level N means
+    // the character is at least N+1; never display less than that.
+    await env.DB.prepare(
+      `UPDATE characters
+          SET level = MAX(COALESCE(level, 0),
+                          (SELECT COALESCE(MAX(level), 0) + 1 FROM levels WHERE char_id = ?))
+        WHERE char_id = ?`
+    ).bind(charId, charId).run();
+
     // Prefer the Nemesis payload (schema 2). blob.pvp is the older PvP
     // module's shape and uses different field names, so it is mapped rather
     // than read directly -- reading blob.pvp.honorableKills would silently
