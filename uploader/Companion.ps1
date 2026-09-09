@@ -354,6 +354,23 @@ function Find-AddonDir {
 # folder and silently loads NOTHING -- no slash commands, no minimap button --
 # while this companion happily reported addonFound=true because the path
 # existed. This names the exact mistake instead of letting 'true' lie.
+# The version of the addon actually installed in WoW, read from its .toc.
+# The heartbeat used to report only the COMPANION version, so 'did you update
+# the addon zip too?' had to be asked every single time -- and answered from
+# memory. Now the server can see both numbers side by side.
+function Get-AddonVersion {
+    $d = Find-AddonDir
+    if (-not $d) { return $null }
+    $toc = Join-Path $d 'LevelPace.toc'
+    if (-not (Test-Path $toc)) { return $null }
+    try {
+        foreach ($line in (Get-Content -LiteralPath $toc -ErrorAction Stop)) {
+            if ($line -match '^\s*##\s*Version:\s*(\S+)') { return $Matches[1] }
+        }
+    } catch { }
+    return $null
+}
+
 function Get-AddonInstallProblem {
     foreach ($root in (Find-WowRoots)) {
         $addons = Join-Path $root 'Interface\AddOns'
@@ -599,7 +616,14 @@ function Invoke-Sync([switch]$Quiet) {
             } else {
                 Write-Log "  (no LevelPace.lua yet -- the addon has not written one)"
             }
-            Send-Hello $cfg $true $addonHere ($detail -eq 'blob present, re-reading') $detail
+            $av = Get-AddonVersion
+            if ($av) {
+                $detail = ("{0} [addon {1}, companion {2}]" -f $detail, $av, $Version)
+                Write-Log ("  installed addon version: {0}  (companion {1})" -f $av, $Version)
+            } else {
+                $detail = ("{0} [addon version unreadable, companion {1}]" -f $detail, $Version)
+            }
+            Send-Hello $cfg $true $addonHere ($detail -like 'blob present*') $detail
         }
     } else {
         $merged = '[' + (($payloads | ForEach-Object { $_.Trim().TrimStart('[').TrimEnd(']') }) -join ',') + ']'
