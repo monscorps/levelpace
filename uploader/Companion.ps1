@@ -109,6 +109,7 @@ function Get-KeyPath {
 }
 
 function Get-InstallKey($server) {
+    if ($env:LEVELPACE_OFFLINE) { return $null }
     $path = Get-KeyPath
     if (Test-Path $path) {
         $k = (Get-Content $path -Raw).Trim()
@@ -470,6 +471,37 @@ function Write-Board($addonDir, $overall, $twinks, $version, $source) {
 # One cycle: send what we have, bring back the board
 # ---------------------------------------------------------------------------
 
+# Report what we can and cannot see, whether or not there is anything to
+# upload.
+#
+# Enrolment used to happen only inside the send path, so a companion that was
+# running perfectly but had nothing to send never contacted the server at all.
+# From the operator's side that is indistinguishable from never being
+# installed -- and it cost two days of guessing at a client that was alive the
+# whole time. Now it says so.
+function Send-Hello($cfg, [bool]$wow, [bool]$addon, [bool]$blob, [string]$detail) {
+    # The build gate runs these functions for real to prove they survive a
+    # machine with no WoW and no addon -- which, the moment this function
+    # existed, meant every build wrote a junk row into the PRODUCTION client
+    # table and consumed enrolment rate limit. A test that mutates the live
+    # system is worse than no test.
+    if ($env:LEVELPACE_OFFLINE) { return }
+    try {
+        $key = Get-InstallKey $cfg.Server
+        if (-not $key) { return }
+        $body = @{
+            version = $Version; wowFound = $wow; addonFound = $addon
+            blobFound = $blob; detail = $detail
+        } | ConvertTo-Json -Compress
+        [void](Invoke-RestMethod -Uri ($cfg.Server.TrimEnd('/') + '/api/hello') `
+                 -Method Post -Body $body -ContentType 'application/json' `
+                 -Headers @{ Authorization = "Bearer $key" } `
+                 -UserAgent "LevelPaceCompanion/$Version" -TimeoutSec 15)
+    } catch {
+        # Never fatal. This is diagnostics, not the job.
+    }
+}
+
 function Invoke-Sync([switch]$Quiet) {
     $cfg = Get-Config
     $sent = 0
@@ -487,13 +519,29 @@ function Invoke-Sync([switch]$Quiet) {
         if ($roots.Count -eq 0) {
             Write-Log "Nothing to send: could not find your World of Warcraft folder."
             Write-Log "  Right-click the tray icon and choose 'Set WoW folder...'"
+            Send-Hello $cfg $false $false $false 'no WoW folder found'
         } else {
             # The commonest case by far, and not an error: WoW writes its
             # saved variables ONLY on logout or /reload. A player who just
             # installed the addon has no file yet.
             Write-Log ("Nothing to send yet. Found WoW at {0}." -f $roots[0])
             Write-Log "  Log out of WoW once (or type /reload) and this will pick it up."
-            Write-Log "  Also check sharing is on: /lp then Leaderboard."
+            Write-Log "  Also check sharing is on: minimap button, or /lp share on"
+            $sv = @(Find-SavedVariables)
+            $hasFile = ($sv.Count -gt 0)
+            if ($hasFile) {
+                Write-Log ("  ({0} exists, but carries no shared data -- sharing is off)" -f $sv[0])
+            } else {
+                Write-Log "  (no LevelPace.lua yet -- the addon has not written one)"
+            }
+            # Written out longhand rather than as an inline `if` expression or a
+            # string coerced to bool. PowerShell 7 accepts both; 5.1 is the
+            # target and is stricter, and I cannot test 5.1 from here.
+            $detail = 'no saved-variables file yet'
+            if ($hasFile) { $detail = 'file exists, sharing off' }
+            $addonHere = $false
+            if (Find-AddonDir) { $addonHere = $true }
+            Send-Hello $cfg $true $addonHere $false $detail
         }
     } else {
         $merged = '[' + (($payloads | ForEach-Object { $_.Trim().TrimStart('[').TrimEnd(']') }) -join ',') + ']'

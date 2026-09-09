@@ -102,6 +102,7 @@ $payloadFile = Join-Path $tmp 'payload.ps1'
 $env:LEVELPACE_BAT = (Resolve-Path $Bat).Path
 $env:LOCALAPPDATA  = $tmp
 $env:TEMP          = $tmp
+$env:LEVELPACE_OFFLINE = '1'
 $pwshPath = (Get-Process -Id $PID).Path
 
 # Invoke-Expression on the STRING, exactly as the launcher does -- NOT `& file`.
@@ -173,6 +174,8 @@ $callSrc = @"
 `$env:LEVELPACE_BAT = '$((Resolve-Path $Bat).Path)'
 `$env:LOCALAPPDATA  = '$tmp2'
 `$env:TEMP          = '$tmp2'
+# Never touch the live server from a build. See Send-Hello.
+`$env:LEVELPACE_OFFLINE = '1'
 try {
     . '$fnFile'
 } catch {

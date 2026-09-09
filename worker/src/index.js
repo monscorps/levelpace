@@ -213,6 +213,59 @@ async function handleEnrol(req, env) {
   });
 }
 
+/**
+ * A heartbeat.
+ *
+ * Enrolment used to happen only when there was something to send, so a
+ * companion that was running perfectly but had nothing to upload was
+ * indistinguishable from one that had never been installed. Two days were
+ * spent guessing at a client that was alive the whole time and could not say
+ * so. This is that channel: it reports what the companion can and cannot see,
+ * so a failure is visible to the operator instead of only in a log file on
+ * someone else's machine.
+ */
+async function handleHello(req, env) {
+  const installId = await auth(req, env);
+  if (!installId) return json({ error: 'unauthorised' }, 401);
+
+  const body = await req.json().catch(() => ({}));
+  const t = now();
+  await env.DB.prepare(
+    `INSERT INTO clients (install_id, version, wow_found, addon_found, blob_found,
+                          detail, first_seen, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(install_id) DO UPDATE SET
+       version = excluded.version, wow_found = excluded.wow_found,
+       addon_found = excluded.addon_found, blob_found = excluded.blob_found,
+       detail = excluded.detail, last_seen = excluded.last_seen`
+  )
+    .bind(installId, String(body.version || '?').slice(0, 32),
+          body.wowFound ? 1 : 0, body.addonFound ? 1 : 0, body.blobFound ? 1 : 0,
+          String(body.detail || '').slice(0, 300), t, t)
+    .run();
+
+  return json({ ok: true, seen: t });
+}
+
+/** Coarse client health. Names nothing about the player -- only whether a
+ *  companion is alive and which of its three preconditions are met. */
+async function handleClients(env) {
+  const rs = await env.DB.prepare(
+    `SELECT version, wow_found, addon_found, blob_found, detail, last_seen
+       FROM clients ORDER BY last_seen DESC LIMIT 50`
+  ).all();
+  return json({
+    clients: (rs.results || []).map((c) => ({
+      version: c.version,
+      wowFound: !!c.wow_found,
+      addonFound: !!c.addon_found,
+      blobFound: !!c.blob_found,
+      detail: c.detail || null,
+      lastSeen: c.last_seen,
+    })),
+  });
+}
+
 async function handleSubmit(req, env) {
   const installId = await auth(req, env);
   const body = await req.json().catch(() => null);
@@ -594,13 +647,16 @@ export default {
         return await handleEnrol(req, env);
       if (url.pathname === '/api/submit' && req.method === 'POST')
         return await handleSubmit(req, env);
+      if (url.pathname === '/api/hello' && req.method === 'POST')
+        return await handleHello(req, env);
+      if (url.pathname === '/api/clients') return await handleClients(env);
       if (url.pathname === '/api/leaderboard') return await handleLeaderboard(url, env);
       if (url.pathname === '/api/rares') return await handleRareLog(url, env);
       if (url.pathname === '/api/stats') return await handleStats(env);
       if (url.pathname === '/' || url.pathname === '/api')
         return json({
           service: 'levelpace',
-          routes: ['/api/stats', '/api/leaderboard', '/api/rares', '/api/enrol', '/api/submit'],
+          routes: ['/api/stats', '/api/leaderboard', '/api/rares', '/api/enrol', '/api/submit', '/api/hello', '/api/clients'],
           board: 'https://monscorps.github.io/levelpace',
         });
       return json({ error: 'not found' }, 404);

@@ -124,3 +124,18 @@ CREATE INDEX IF NOT EXISTS idx_audit_at ON audit(at DESC);
 -- every enrol and every submit scanned the table -- and D1 bills rows read,
 -- so the cost grew with the table forever.
 CREATE INDEX IF NOT EXISTS idx_audit_rl ON audit(kind, detail, at);
+
+-- Companion health. Exists because a client that was running correctly but
+-- had nothing to upload looked identical to one that had never been
+-- installed, and that cost two days of guessing.
+CREATE TABLE IF NOT EXISTS clients (
+  install_id  TEXT PRIMARY KEY,
+  version     TEXT,
+  wow_found   INTEGER DEFAULT 0,
+  addon_found INTEGER DEFAULT 0,
+  blob_found  INTEGER DEFAULT 0,
+  detail      TEXT,
+  first_seen  INTEGER NOT NULL,
+  last_seen   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_clients_seen ON clients(last_seen DESC);
