@@ -527,21 +527,38 @@ function Invoke-Sync([switch]$Quiet) {
             Write-Log ("Nothing to send yet. Found WoW at {0}." -f $roots[0])
             Write-Log "  Log out of WoW once (or type /reload) and this will pick it up."
             Write-Log "  Also check sharing is on: minimap button, or /lp share on"
+            # INSPECT the file rather than guessing. The old code said
+            # 'sharing off' for any file that produced no payload, which is
+            # three different situations wearing one label. Reading the file
+            # tells them apart, and turns a stale heartbeat into a fact.
             $sv = @(Find-SavedVariables)
-            $hasFile = ($sv.Count -gt 0)
-            if ($hasFile) {
-                Write-Log ("  ({0} exists, but carries no shared data -- sharing is off)" -f $sv[0])
+            $detail = 'no saved-variables file yet'
+            $addonHere = $false
+            if (Find-AddonDir) { $addonHere = $true }
+
+            if ($sv.Count -gt 0) {
+                $raw = ''
+                try { $raw = Get-Content -Raw -LiteralPath $sv[0] -Encoding UTF8 } catch { }
+                $hasExport = ($raw -match 'exportJSON')
+                $shareOn   = ($raw -match '\["?enabled"?\]\s*=\s*true')
+
+                if ($hasExport) {
+                    # There IS a blob; the earlier Get-Payload just did not run
+                    # against this file. Force a real read so it uploads.
+                    $detail = 'blob present, re-reading'
+                    Write-Log ("  ({0} contains a shared blob -- re-reading it now)" -f $sv[0])
+                } elseif ($shareOn) {
+                    $detail = 'sharing on, addon wrote no blob'
+                    Write-Log "  (sharing looks ON in the file, but the addon wrote no blob."
+                    Write-Log "   Update the ADDON zip too, then /reload.)"
+                } else {
+                    $detail = 'sharing off in the file'
+                    Write-Log ("  ({0} exists but sharing is off in it. /lp share on, then /reload)" -f $sv[0])
+                }
             } else {
                 Write-Log "  (no LevelPace.lua yet -- the addon has not written one)"
             }
-            # Written out longhand rather than as an inline `if` expression or a
-            # string coerced to bool. PowerShell 7 accepts both; 5.1 is the
-            # target and is stricter, and I cannot test 5.1 from here.
-            $detail = 'no saved-variables file yet'
-            if ($hasFile) { $detail = 'file exists, sharing off' }
-            $addonHere = $false
-            if (Find-AddonDir) { $addonHere = $true }
-            Send-Hello $cfg $true $addonHere $false $detail
+            Send-Hello $cfg $true $addonHere ($detail -eq 'blob present, re-reading') $detail
         }
     } else {
         $merged = '[' + (($payloads | ForEach-Object { $_.Trim().TrimStart('[').TrimEnd(']') }) -join ',') + ']'
