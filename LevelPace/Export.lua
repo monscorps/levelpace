@@ -231,6 +231,11 @@ end
 -- sharing off has made a choice, and nagging them is worse than them missing
 -- a board they did not want to be on.
 function Export:NudgeIfIdle()
+  -- Once per session, across every trigger. At login it usually has nothing
+  -- to say for a fresh character (no finished levels yet), so LEVEL_CHANGED
+  -- below gives it a second chance the moment the first level completes --
+  -- without turning every ding into a nag.
+  if self.nudgedThisSession then return false end
   if self:Enabled() then return false end
   local levels = (LP.History and LP.History:All()) or {}
   local done = 0
@@ -243,6 +248,7 @@ function Export:NudgeIfIdle()
     "%d completed level%s recorded, but sharing is |cffff8080off|r -- nothing is being uploaded.",
     done, done == 1 and "" or "s"))
   LP:Print("Turn it on with |cffffd100/lp share on|r (or the minimap button), then /reload.")
+  self.nudgedThisSession = true
   return true
 end
 
@@ -256,6 +262,14 @@ end
 -- ---------------------------------------------------------------------------
 -- Wiring
 -- ---------------------------------------------------------------------------
+
+LP:On("LEVEL_CHANGED", function()
+  -- The first completed level is the moment sharing-off starts costing
+  -- something. Say so then, not at the next login.
+  if LP.Export and LP.Export.NudgeIfIdle then
+    pcall(function() LP.Export:NudgeIfIdle() end)
+  end
+end)
 
 LP:On("LEVEL_CHANGED", function() Export:Write() end)
 LP:On("SHARE_CHANGED", function() Export:Write() end)

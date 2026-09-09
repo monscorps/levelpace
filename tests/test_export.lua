@@ -185,4 +185,63 @@ h.run("ignores a level with no recorded time", function()
   h.eq(LP.Export:NudgeIfIdle(), false, "nothing complete, nothing to say")
 end)
 
+-- ==== sharing follows the account, not the character ====
+
+h.run("sharing survives onto a brand-new character", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  LP.db.profile.share.sharePvP = true
+
+  -- A new alt: the character file is fresh, the account file persists. This
+  -- is exactly a player rolling a level 1 after ticking sharing on their
+  -- main -- the case that used to reset silently to off.
+  _G.LevelPaceCharDB = nil
+  LP:InitDB()
+  h.eq(LP.db.profile.share.enabled, true, "still on for the alt")
+  h.eq(LP.db.profile.share.sharePvP, true, "pvp choice carries too")
+end)
+
+h.run("turning sharing off on an alt turns it off everywhere", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  _G.LevelPaceCharDB = nil
+  LP:InitDB()
+  LP.db.profile.share.enabled = false
+  _G.LevelPaceCharDB = nil
+  LP:InitDB()
+  h.eq(LP.db.profile.share.enabled, false, "one switch, one meaning")
+end)
+
+h.run("an existing character's old choice migrates to the account", function()
+  local LP = boot()
+  -- Simulate a pre-change character file that carried its own share table,
+  -- with no account-level share yet.
+  _G.LevelPaceDB.share = nil
+  _G.LevelPaceCharDB.profile.share = { enabled = true, alias = "", shareRealm = true,
+    shareClass = true, shareFaction = true, sharePvP = false }
+  LP:InitDB()
+  h.eq(LP.gdb.share.enabled, true, "donated to the account")
+  h.eq(LP.db.profile.share, LP.gdb.share, "and re-linked to one table")
+end)
+
+h.run("the nudge fires when the first level completes, and only once", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = false
+  LP.db.history = {}
+  local said = 0
+  LP.Print = function() said = said + 1 end
+
+  LP:Fire("LEVEL_CHANGED", 2)
+  h.eq(said, 0, "nothing finished yet, nothing to say")
+
+  LP.db.history = { { level = 1, elapsed = 240 } }
+  LP:Fire("LEVEL_CHANGED", 2)
+  h.ok(said >= 1, "spoke up at the first completed level")
+
+  local after = said
+  LP:Fire("LEVEL_CHANGED", 3)
+  LP:Fire("LEVEL_CHANGED", 4)
+  h.eq(said, after, "and never again this session -- a ding is not a nag slot")
+end)
+
 os.exit(h.report() and 0 or 1)

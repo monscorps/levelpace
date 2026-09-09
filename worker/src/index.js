@@ -42,7 +42,15 @@ const LIMITS = {
 const BOUNDS = {
   levelMin: 1,
   levelMax: 80,
-  secondsMin: 30, // sub-30s levels are not achievable by playing
+  // Reject-impossible only. The floor was 30s, which sounded safe and was
+  // not: this targets private servers with boosted XP rates, where level 1->2
+  // at x5 is two or three kills and legitimately finishes in well under 30
+  // seconds. A 30s floor would have silently rejected the first levels of
+  // exactly the fresh-character test it was about to be used for. Five
+  // seconds is genuinely impossible -- less time than killing two mobs --
+  // and everything between 5s and 30s is merely flagged.
+  secondsMin: 5,
+  secondsFlag: 30,
   secondsMax: 60 * 60 * 24 * 30,
   npcIdMax: 0xffffff, // 24-bit creature entry
   hkMax: 5_000_000,
@@ -174,6 +182,7 @@ function inspectLevel(row) {
     return { reject: `level out of range: ${row.level}` };
   if (!Number.isFinite(seconds) || seconds <= 0) return { reject: 'non-positive time' };
   if (seconds < BOUNDS.secondsMin) return { reject: `level in ${seconds}s is not playable` };
+  if (seconds < BOUNDS.secondsFlag) flags.push('very-fast');
   if (seconds > BOUNDS.secondsMax) flags.push('very-slow');
   return { flags };
 }

@@ -351,6 +351,25 @@ function LP:InitDB()
   })
   LP.db = _G.LevelPaceCharDB
   LP.gdb = _G.LevelPaceDB
+
+  -- Sharing is ACCOUNT-wide, done by making every character's profile.share
+  -- point at one table in the account file.
+  --
+  -- It used to live only in the character file, which meant every alt started
+  -- with sharing off no matter what you chose on your main. Nobody re-finds a
+  -- checkbox for every character they roll; they just silently stop appearing
+  -- on the board and nobody knows why. Ticking it once should mean it.
+  --
+  -- Migration: the first character to load after this change donates their
+  -- existing choice to the account, so someone who already switched sharing
+  -- on stays on. After that the account table wins, always.
+  if not LP.gdb.share then
+    LP.gdb.share = LP.db.profile.share
+  end
+  LP.db.profile.share = LP.gdb.share
+  -- New fields added to the defaults later must still appear on old accounts.
+  LP.util.CopyDefaults(LP.gdb.share, LP.defaults.profile.share)
+
   return LP.db
 end
 
