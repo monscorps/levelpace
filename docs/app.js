@@ -29,22 +29,22 @@
 
   var VIEWS = {
     levelling: {
-      path: "/api/leaderboard?board=levelling&limit=100", label: "lvl / hr",
+      path: "/api/leaderboard?board=levelling&limit=200", label: "lvl / hr",
       sub: "Levels per hour — deaths, corpse runs and bank time included. Colour is your percentile among everyone here.",
       empty: ["Nobody has", "timed a level", "yet"], hint: "Finish one level with sharing on and you are #1."
     },
     pvp: {
-      path: "/api/leaderboard?board=pvp&limit=100", label: "honor kills",
+      path: "/api/leaderboard?board=pvp&limit=200", label: "honor kills",
       sub: "Lifetime honorable kills, straight from the server. Needs the PvP sharing tick.",
       empty: ["No one has", "shared PvP", "yet"], hint: "Tick “Also share PvP” on the skull menu, then /reload."
     },
     rares: {
-      path: "/api/leaderboard?board=rares&limit=100", label: "rares",
+      path: "/api/leaderboard?board=rares&limit=200", label: "rares",
       sub: "Rare kills credited to you — your killing blow, or one landed next to you.",
       empty: ["No rare", "has died", "yet"], hint: "420 rares are catalogued. Go find one."
     },
     rarelog: {
-      path: "/api/rares?limit=80", label: "",
+      path: "/api/rares?limit=200", label: "",
       sub: "Every rare kill reported, newest first.",
       empty: ["Nothing in", "the log", "yet"], hint: "The first kill lands here within a minute of an upload."
     }
