@@ -205,4 +205,24 @@ h.run("a disabled module's frames stay hidden across ticks", function()
   h.eq(box:IsShown(), true, "box returns when switched back on")
 end)
 
+-- ==== swallowed errors must surface ====
+
+h.run("a handler error is printed once even with debug off", function()
+  local LP = load()
+  LP.debug = false
+  local printed = {}
+  LP.Print = function(_, m) printed[#printed + 1] = tostring(m) end
+  LP:On("BOOM", function() error("attempt to call field 'randomseed' (a nil value)") end)
+  LP:Fire("BOOM"); LP:Fire("BOOM"); LP:Fire("BOOM")
+  local hits = 0
+  for _, m in ipairs(printed) do if m:find("randomseed") then hits = hits + 1 end end
+  h.eq(hits, 1, "reported exactly once, not zero and not three")
+end)
+
+h.run("ADDON_LOADED matches the real folder name, not a literal", function()
+  h.load("LevelPace/Core.lua")
+  local LP = _G.LevelPace
+  h.eq(LP.ADDON_NAME, "LevelPace", "harness passes LevelPace as the vararg")
+end)
+
 os.exit(h.report() and 0 or 1)

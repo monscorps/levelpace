@@ -445,4 +445,34 @@ h.run("an unknown achievement id degrades to the fallback rather than nil", func
        "SetTexture(nil) would draw nothing at all")
 end)
 
+-- ==== bugs found by the 3.3.5 API audit ====
+
+h.run("/lp nemesis does not crash once an achievement is earned", function()
+  local LP, N = load()
+  h.load("LevelPace/PvP.lua")
+  -- Force an earned achievement into the PvP store the way CheckAchievements does.
+  LP.db.pvp = LP.db.pvp or {}
+  if LP.PvP and LP.PvP.EarnedAchievements then
+    LP.PvP.EarnedAchievements = function() return { { id = "firstblood", name = "First Blood", desc = "x", earned = 1 } } end
+  end
+  local ok, err = pcall(function() N:PrintSummary() end)
+  h.eq(ok, true, "PrintSummary survives with achievements: " .. tostring(err))
+end)
+
+h.run("a death is attributed to the last player who hit you", function()
+  local LP, N = load()
+  h.state.playerGUID = "0x0000000000000001"
+  LP:SetModuleEnabled("nemesis", false); LP:SetModuleEnabled("nemesis", true)
+  -- A mob hits us: not a player, must not become the attacker.
+  LP:DispatchCombatLog(1, "SWING_DAMAGE", "0xF13000020D02DD76", "Mangy Wolf", 0, "0x0000000000000001", "Me", 0)
+  -- Then a player hits us.
+  LP:DispatchCombatLog(2, "SPELL_DAMAGE", "0x0000000000000099", "Ganklord", 0, "0x0000000000000001", "Me", 0)
+  -- Damage aimed at someone ELSE must not count.
+  LP:DispatchCombatLog(3, "SPELL_DAMAGE", "0x0000000000000042", "Bystander", 0, "0x0000000000000777", "NotMe", 0)
+  h.eq(N.lastAttacker, "Ganklord", "last PLAYER to hit ME")
+  LP.eventFrame.scripts.OnEvent(LP.eventFrame, "PLAYER_DEAD")
+  h.eq(N:Record("Ganklord").deaths, 1, "death attributed")
+  h.eq(N.lastAttacker, nil, "consumed after the death")
+end)
+
 os.exit(h.report() and 0 or 1)

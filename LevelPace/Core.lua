@@ -2,12 +2,16 @@
 -- Addon table, internal event bus, throttled scheduler, saved-variables
 -- bootstrap and slash commands.
 
-local ADDON_NAME = ...
+-- The FIRST vararg is the addon's folder name as WoW sees it on disk. Use
+-- it for the ADDON_LOADED comparison rather than a literal: a folder named
+-- 'levelpace' or 'LevelPace-main' would otherwise never match, DB_READY
+-- would never fire, and Rates:Load would silently never run.
+local ADDON_NAME = ... or "LevelPace"
 
 local LP = {}
 _G.LevelPace = LP
 
-LP.ADDON_NAME = "LevelPace"
+LP.ADDON_NAME = ADDON_NAME
 
 -- Single source of truth is the TOC, so a release bump touches one line.
 -- GetAddOnMetadata works on 3.3.5a; the fallback covers being loaded outside
@@ -27,6 +31,24 @@ function LP:On(event, fn)
   table.insert(handlers[event], fn)
 end
 
+-- A handler error is reported ONCE per distinct message, per session, even
+-- with debug off. Swallowing them silently is how a one-line bug --
+-- math.randomseed not existing in WoW -- stayed invisible for a month while
+-- every player's upload quietly did nothing. An error the player never sees
+-- is not "contained", it is hidden. Once, so a broken 1Hz handler does not
+-- flood chat.
+local reported = {}
+function LP:ReportError(where, err)
+  local msg = tostring(err)
+  local key = where .. "|" .. msg
+  if reported[key] and not LP.debug then return end
+  reported[key] = true
+  LP:Print("|cffff5555error in " .. tostring(where) .. ":|r " .. msg)
+  if not LP.debug then
+    LP:Print("|cff8c8c94(reported once; /lp debug to see every occurrence)|r")
+  end
+end
+
 function LP:Fire(event, ...)
   local list = handlers[event]
   if not list then return end
@@ -34,9 +56,7 @@ function LP:Fire(event, ...)
     -- One bad handler must never take down the others. A parse error in the
     -- ledger should not stop the bar redrawing.
     local ok, err = pcall(list[i], ...)
-    if not ok and LP.debug then
-      LP:Print("|cffff5555error in " .. tostring(event) .. ":|r " .. tostring(err))
-    end
+    if not ok then LP:ReportError(event, err) end
   end
 end
 
@@ -108,9 +128,7 @@ local function ensureEventFrame()
     if not list then return end
     for i = 1, #list do
       local ok, err = pcall(list[i].fn, ...)
-      if not ok and LP.debug then
-        LP:Print("|cffff5555" .. list[i].id .. " / " .. event .. ":|r " .. tostring(err))
-      end
+      if not ok then LP:ReportError(list[i].id .. " / " .. event, err) end
     end
   end)
   LP.eventFrame = f
@@ -148,9 +166,7 @@ function LP:DispatchCombatLog(timestamp, subevent, srcGUID, srcName, srcFlags,
     if hnd.subevents[subevent] then
       local ok, err = pcall(hnd.fn, timestamp, subevent, srcGUID, srcName, srcFlags,
                             dstGUID, dstName, dstFlags, ...)
-      if not ok and LP.debug then
-        LP:Print("|cffff5555" .. hnd.id .. " / CLEU:|r " .. tostring(err))
-      end
+      if not ok then LP:ReportError(hnd.id .. " / CLEU", err) end
     end
   end
 end
@@ -203,18 +219,14 @@ function LP:SetModuleEnabled(id, on)
     -- as with the event bus.
     if def.OnEnable then
       local ok, err = pcall(def.OnEnable, def)
-      if not ok and LP.debug then
-        LP:Print("|cffff5555" .. id .. " OnEnable:|r " .. tostring(err))
-      end
+      if not ok then LP:ReportError(id .. " OnEnable", err) end
     end
     LP:Fire("MODULE_ENABLED", id)
   else
     LP:UnregisterModuleEvents(id)
     if def.OnDisable then
       local ok, err = pcall(def.OnDisable, def)
-      if not ok and LP.debug then
-        LP:Print("|cffff5555" .. id .. " OnDisable:|r " .. tostring(err))
-      end
+      if not ok then LP:ReportError(id .. " OnDisable", err) end
     end
     LP:Fire("MODULE_DISABLED", id)
   end
@@ -457,9 +469,18 @@ local function dispatch(input)
 
   if cmd == "" then
     if InterfaceOptionsFrame_OpenToCategory and LP.optionsPanel then
+      -- On 3.3.5 the first call after login only opens the AddOns tab and
+      -- silently returns without selecting the category; the second call
+      -- lands. Calling it twice is the documented workaround. And a bare
+      -- /lp must never be silent -- "it did nothing" is what a player
+      -- reports when the panel does not appear.
       InterfaceOptionsFrame_OpenToCategory(LP.optionsPanel)
+      InterfaceOptionsFrame_OpenToCategory(LP.optionsPanel)
+      LP:Print("LevelPace " .. tostring(LP.VERSION) ..
+        " -- options opened. /lp meter, /lp dash, /lp share on, /lp modules")
     else
-      LP:Print("options unavailable; try /lp quests")
+      LP:Print("LevelPace " .. tostring(LP.VERSION) ..
+        " -- options panel not available. Try /lp meter, /lp dash, /lp modules")
     end
   elseif cmd == "reset" then
     if not LP.db then LP:Print("not ready yet."); return end

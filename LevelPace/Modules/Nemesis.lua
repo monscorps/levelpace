@@ -434,31 +434,6 @@ function N:PrintSummary()
     end
   end
 
-  -- Achievements, newest first, with their icons.
-  if LP.PvP and LP.PvP.EarnedAchievements then
-    local ok, earned = pcall(function() return LP.PvP:EarnedAchievements() end)
-    if ok and type(earned) == "table" then
-      local items = {}
-      for i = 1, #earned do
-        local a = earned[i]
-        if a.earned then
-          items[#items + 1] = {
-            text = a.name,
-            sub = a.desc,
-            icon = LP.data and LP.data.AchievementIcon and
-                   LP.data.AchievementIcon(a.id) or nil,
-            -- Earned achievements get the gold of a perfect parse; it is the
-            -- one place in the addon where a fixed colour beats a computed one.
-            colour = LP.data and LP.data.BANDS and LP.data.BANDS[#LP.data.BANDS],
-          }
-        end
-      end
-      if #items > 0 then
-        rows[#rows + 1] = { kind = "list", title = "Achievements", items = items }
-      end
-    end
-  end
-
   local known, total = self:GuildCoverage()
   if total > 0 then
     LP:Print(string.format("enemy guilds known: %d of %d (only those you target)",
@@ -605,6 +580,19 @@ LP:RegisterModule({
   OnEnable = function()
     N:Init()
 
+    -- Who is hitting ME. PLAYER_DEAD carries no killer, so the last player
+    -- to land damage on us is the attribution -- and nothing set this field
+    -- before, which meant every death recorded a nil enemy and "who keeps
+    -- killing you" never populated from a real death. Cheapest reject first:
+    -- this runs for every damage line in a 40-player battleground.
+    N.myGUID = (UnitGUID and UnitGUID("player")) or nil
+    LP:OnCombatLog("nemesis",
+      { "SWING_DAMAGE", "SPELL_DAMAGE", "RANGE_DAMAGE", "SPELL_PERIODIC_DAMAGE" },
+      function(_, _, srcGUID, srcName, _, dstGUID)
+        if dstGUID ~= N.myGUID then return end
+        if srcName and util.IsPlayerGUID(srcGUID) then N.lastAttacker = srcName end
+      end)
+
     LP:OnCombatLog("nemesis", { "PARTY_KILL" },
       function(_, _, _, _, _, dstGUID, dstName)
         -- PARTY_KILL fires for the KILLER only and is unicast to their group,
@@ -616,6 +604,7 @@ LP:RegisterModule({
 
     LP:RegisterEvent("PLAYER_DEAD", "nemesis", function()
       N:RecordDeath(N.lastAttacker)
+      N.lastAttacker = nil   -- consumed; the next death needs a fresh hit
     end)
 
     LP:RegisterEvent("PLAYER_TARGET_CHANGED", "nemesis", function()
