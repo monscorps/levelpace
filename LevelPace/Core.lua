@@ -482,6 +482,13 @@ local function dispatch(input)
     LP:Fire("TOGGLE_SHOWN", true)
   elseif cmd == "hide" then
     LP:Fire("TOGGLE_SHOWN", false)
+  elseif cmd == "feedback" or cmd == "bug" then
+    -- A URL cannot be clicked from chat on 3.3.5a, and a player will not
+    -- retype one from memory. Print it on its own line so it can be dragged
+    -- over and copied.
+    LP:Print("Broken, or an idea? Say so here:")
+    LP:Print("|cffffd100https://github.com/monscorps/levelpace/issues|r")
+    LP:Print("If it is the uploader: right-click its tray icon, Copy log, and paste that in.")
   elseif cmd == "minimap" or cmd == "mm" then
     if LP.Minimap then
       LP.Minimap:Toggle()
@@ -522,7 +529,7 @@ local function dispatch(input)
       LP:Print(id .. " is now " .. (now and "on" or "off"))
     end
   else
-    LP:Print("commands: minimap, meter, dash, board, rares, nemesis,")
+    LP:Print("commands: minimap, meter, dash, board, rares, nemesis, feedback,")
     LP:Print("          modules, toggle <id>, reset, quests, share, lock, debug")
   end
   LP.lastCommand = cmd

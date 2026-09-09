@@ -67,9 +67,18 @@ if [ ! -f "$NOTES_FILE" ]; then
   exit 1
 fi
 
+# GitHub attaches "Source code (zip)" and "Source code (tar.gz)" to every
+# release automatically and there is no way to remove them. So the two files
+# that matter have to WIN on name alone -- someone scanning four downloads
+# should not have to think. The old names lost that contest badly:
+# "LevelPace-Leaderboard.zip" was actually the uploader, not the leaderboard.
+rm -rf dist/upload && mkdir -p dist/upload
+cp dist/LevelPace.zip             "dist/upload/1-ADDON-LevelPace.zip"
+cp dist/LevelPace-Leaderboard.zip "dist/upload/2-UPLOADER-LevelPace-Companion.zip"
+
 gh release create "v$VERSION" \
-  dist/LevelPace.zip \
-  dist/LevelPace-Leaderboard.zip \
+  "dist/upload/1-ADDON-LevelPace.zip" \
+  "dist/upload/2-UPLOADER-LevelPace-Companion.zip" \
   --title "LevelPace v$VERSION" \
   --notes-file "$NOTES_FILE"
 

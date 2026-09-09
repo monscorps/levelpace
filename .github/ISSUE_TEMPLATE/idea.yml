@@ -1,0 +1,30 @@
+name: An idea
+description: Something you want it to do.
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Say what you want to *know* or *do*, not how you think it should be
+        built — the useful part is the problem, not the implementation.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What do you want?
+      placeholder: |
+        I want to see whether I am ahead of my guildies at the same level,
+        without opening the website.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: which
+    attributes:
+      label: Which part?
+      options:
+        - LevelPace (XP, pace, quests)
+        - Nemesis (battlegrounds, PvP)
+        - Rare Finder (rare kills)
+        - The leaderboard
+        - Something new

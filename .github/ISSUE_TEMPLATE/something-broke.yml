@@ -1,0 +1,56 @@
+name: Something is broken
+description: It crashed, did nothing, or showed the wrong number.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things make a report fixable instead of a guessing game: what you
+        expected, and the log. Everything else is optional.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, and what you expected instead.
+      placeholder: |
+        I clicked the minimap button and nothing opened.
+        I expected the menu.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Which version?
+      description: "In game: /lp — the version prints at login. Or the release you downloaded."
+      placeholder: "0.9.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - In the game (the addon)
+        - The companion (the tray icon)
+        - The leaderboard website
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: The companion log, if it is a companion problem
+      description: |
+        Right-click the LevelPace icon by your clock → **Copy log (for Discord)**,
+        then paste here. It is already formatted.
+      render: text
+
+  - type: input
+    id: server
+    attributes:
+      label: Which server do you play on?
+      description: Only matters for language and custom content. Leave blank if you would rather not say.

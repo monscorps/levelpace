@@ -158,6 +158,14 @@ function MM:MenuItems()
     end,
   }
   items[#items + 1] = {
+    text = "Report a problem / idea", notCheckable = true,
+    tooltip = "Prints the link in chat",
+    func = function()
+      LP:Print("Broken, or an idea? Say so here:")
+      LP:Print("|cffffd100https://github.com/monscorps/levelpace/issues|r")
+    end,
+  }
+  items[#items + 1] = {
     text = "Hide this button", notCheckable = true,
     func = function()
       MM:Toggle()
