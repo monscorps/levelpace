@@ -382,6 +382,11 @@ function LP:Bootstrap()
       LP:StartModules()
       LP:Print("loaded. /lp for options, /lp board for rankings.")
       LP:CheckVersion()
+      -- One line, once, only if there is finished work that sharing is
+      -- silently withholding. See Export:NudgeIfIdle.
+      if LP.Export and LP.Export.NudgeIfIdle then
+        pcall(function() LP.Export:NudgeIfIdle() end)
+      end
     end
   end)
 end

@@ -216,6 +216,36 @@ function Export:Clear()
   end
 end
 
+-- Told once per session, and only when it actually matters: sharing is off
+-- AND there is finished work sitting there that would go up the moment it
+-- were switched on.
+--
+-- This exists because of a real case. A player levelled a whole character
+-- with the addon running, had the companion running too, and nothing ever
+-- reached the board -- because sharing is off by default and nothing ever
+-- said so. The companion could not help: with sharing off there is no blob,
+-- so it has nothing to send and never even contacts the server. The only
+-- place that knows is here.
+--
+-- Deliberately not a popup, and deliberately not repeated: someone who leaves
+-- sharing off has made a choice, and nagging them is worse than them missing
+-- a board they did not want to be on.
+function Export:NudgeIfIdle()
+  if self:Enabled() then return false end
+  local levels = (LP.History and LP.History:All()) or {}
+  local done = 0
+  for i = 1, #levels do
+    if levels[i].elapsed and levels[i].elapsed > 0 then done = done + 1 end
+  end
+  if done == 0 then return false end
+
+  LP:Print(string.format(
+    "%d completed level%s recorded, but sharing is |cffff8080off|r -- nothing is being uploaded.",
+    done, done == 1 and "" or "s"))
+  LP:Print("Turn it on with |cffffd100/lp share on|r (or the minimap button), then /reload.")
+  return true
+end
+
 function Export:Summary()
   local blob = LP.gdb and LP.gdb.export and LP.gdb.export[(charKey())]
   if not blob then return "sharing off" end

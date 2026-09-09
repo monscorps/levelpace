@@ -136,4 +136,53 @@ h.run("the blob declares schema 2", function()
   h.eq(LP.Export:Write().schema, 2, "schema bumped for the identity fields")
 end)
 
+-- ==== the silent dead-end ====
+--
+-- A player levelled an entire character with the addon and the companion both
+-- running, and nothing ever reached the board: sharing is off by default and
+-- nothing said so. The companion cannot help -- with sharing off there is no
+-- blob, so it has nothing to send and never even contacts the server. This is
+-- the only place that knows.
+
+h.run("says something when there is finished work and sharing is off", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = false
+  LP.db.history = { { level = 70, elapsed = 5400 }, { level = 71, elapsed = 6000 } }
+  local said = {}
+  LP.Print = function(_, msg) said[#said + 1] = tostring(msg) end
+  h.eq(LP.Export:NudgeIfIdle(), true, "nudged")
+  h.ok(#said >= 1, "printed something")
+  h.ok(string.find(said[1], "2 completed"), "names how much is waiting")
+  h.ok(string.find(said[2] or "", "share on"), "gives the exact command")
+end)
+
+h.run("stays quiet when sharing is already on", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  LP.db.history = { { level = 70, elapsed = 5400 } }
+  local said = 0
+  LP.Print = function() said = said + 1 end
+  h.eq(LP.Export:NudgeIfIdle(), false, "no nudge")
+  h.eq(said, 0, "silent")
+end)
+
+h.run("stays quiet for a brand new character with nothing to share", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = false
+  LP.db.history = {}
+  local said = 0
+  LP.Print = function() said = said + 1 end
+  -- Someone who has not finished a level yet is not missing out on anything,
+  -- and telling them about a switch they do not need is just noise.
+  h.eq(LP.Export:NudgeIfIdle(), false, "no nudge")
+  h.eq(said, 0, "silent")
+end)
+
+h.run("ignores a level with no recorded time", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = false
+  LP.db.history = { { level = 70, elapsed = 0 }, { level = 71 } }
+  h.eq(LP.Export:NudgeIfIdle(), false, "nothing complete, nothing to say")
+end)
+
 os.exit(h.report() and 0 or 1)
