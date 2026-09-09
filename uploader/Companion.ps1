@@ -694,27 +694,72 @@ $icon.Add_MouseDoubleClick({
 # character screen. Debounced, because the client writes in more than one go.
 
 $script:PendingAt = $null
-$watchers = @()
-Invoke-Safe {
-foreach ($f in (Find-SavedVariables)) {
-    $dir = Split-Path -Parent $f
-    $w = New-Object IO.FileSystemWatcher $dir, 'LevelPace.lua'
-    $w.NotifyFilter = [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::Size
-    $w.EnableRaisingEvents = $true
-    Register-ObjectEvent $w Changed -Action { $script:PendingAt = Get-Date } | Out-Null
-    $watchers += $w
-    Write-Log "watching $f"
+
+# $script: on purpose, and it matters. These lines run inside an Invoke-Safe
+# scriptblock, which PowerShell executes in a CHILD scope -- so a bare
+# `$watchers += $w` reads the parent's value and then creates a local copy.
+# The parent's array stayed empty, the watcher objects were collected, and
+# nothing was ever watched. Everything looked fine; no upload ever happened.
+$script:watchers   = @()
+$script:watchedDirs = @{}
+
+# Re-scan, rather than looking once at startup and calling it a day.
+#
+# The saved-variables file does not exist until the player has logged out or
+# reloaded WITH sharing switched on -- which is almost always after they
+# started this program. Scanning only at launch meant the normal sequence of
+# events guaranteed the file was never found, while the log cheerfully said
+# "will keep looking" and then did not.
+function Update-Watchers {
+    $added = 0
+    foreach ($f in (Find-SavedVariables)) {
+        $dir = Split-Path -Parent $f
+        if ($script:watchedDirs.ContainsKey($dir)) { continue }
+        try {
+            $w = New-Object IO.FileSystemWatcher $dir, 'LevelPace.lua'
+            $w.NotifyFilter = [IO.NotifyFilters]::LastWrite -bor [IO.NotifyFilters]::Size
+            $w.EnableRaisingEvents = $true
+            Register-ObjectEvent $w Changed -Action { $script:PendingAt = Get-Date } | Out-Null
+            $script:watchers += $w
+            $script:watchedDirs[$dir] = $true
+            $added++
+            Write-Log "watching $f"
+        } catch {
+            Write-Log ("could not watch {0}: {1}" -f $dir, $_.Exception.Message)
+        }
+    }
+    return $added
 }
-} 'file watcher setup'
-if ($watchers.Count -eq 0) {
-    Write-Log "no LevelPace.lua found yet -- will keep looking"
+
+Invoke-Safe { [void](Update-Watchers) } 'file watcher setup'
+if ($script:watchers.Count -eq 0) {
+    Write-Log "no LevelPace.lua yet -- rechecking every minute"
+    Write-Log "  (it appears the first time you log out or /reload with sharing on)"
 }
 
 # --- the pump ----------------------------------------------------------------
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 5000
+$script:Ticks = 0
+$script:LastSweep = Get-Date
+
 $timer.Add_Tick({
   Invoke-Safe {
+    $script:Ticks++
+
+    # Every twelve ticks (~60s): look for saved-variables files that did not
+    # exist when this started.
+    if ($script:Ticks % 12 -eq 0) { [void](Update-Watchers) }
+
+    # And sync on a slow schedule regardless of whether any watcher is
+    # working. Watching is an optimisation -- it makes the upload happen
+    # seconds after logout instead of minutes. If it silently fails, as it
+    # just did, the data should still arrive rather than never.
+    if (((Get-Date) - $script:LastSweep).TotalMinutes -ge 5) {
+        $script:LastSweep = Get-Date
+        Invoke-Sync -Quiet
+    }
+
     # Debounce: wait for the file to settle before reading it.
     if ($script:PendingAt -and ((Get-Date) - $script:PendingAt).TotalSeconds -ge 3) {
         $script:PendingAt = $null
