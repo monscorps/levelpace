@@ -17,8 +17,11 @@ local MM = LP.Minimap
 MM.RADIUS = 80          -- standard distance from the minimap centre
 MM.SIZE   = 31
 
--- A black-and-purple stock icon: shadow magic reads as dark violet at 20px,
--- and it exists in every 3.3.5a client.
+-- Shadow Word: Pain, which on a real client reads as a RED SKULL on black --
+-- not the violet the vertex tint below intends. SetVertexColor multiplies,
+-- the texture is red-heavy, and red times 0.72 still wins. This was an
+-- accident, everyone loved it, and it is now the brand: the website's mark
+-- is drawn to match this button, so changing either means changing both.
 MM.ICON = "Interface\\Icons\\Spell_Shadow_ShadowWordPain"
 
 MM.defaults = {

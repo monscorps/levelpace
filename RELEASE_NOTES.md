@@ -71,8 +71,8 @@ you end up with:
 World of Warcraft\Interface\AddOns\LevelPace\LevelPace.toc
 ```
 
-Start WoW. A **black and purple button appears on your minimap** — everything
-is behind it. `/lp modules` confirms all three parts loaded.
+Start WoW. A **red skull on a black button appears on your minimap** —
+everything is behind it. `/lp modules` confirms all three parts loaded.
 
 **2. The leaderboard (optional)**
 
