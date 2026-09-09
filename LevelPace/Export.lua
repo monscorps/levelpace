@@ -93,50 +93,74 @@ function Export:Write()
   end
 
   local share = LP.db.profile.share
+
+  -- Every optional field is fetched through this, so a call that errors on
+  -- one client -- a private-server API that behaves differently, a module
+  -- that half-loaded -- degrades that ONE field to nil instead of throwing
+  -- out of the table constructor and taking the whole blob with it.
+  --
+  -- This is exactly the bug that stranded two real players: the whole blob
+  -- was one constructor, an optional enrichment threw, and `enabled = true`
+  -- persisted while `exportJSON` never got written -- sharing looked on and
+  -- nothing uploaded, with no error because SHARE_CHANGED handlers are
+  -- pcall'd by the bus. The core levelling data must never depend on an
+  -- optional module surviving.
+  local failures
+  local function opt(label, fn)
+    local ok, v = pcall(fn)
+    if ok then return v end
+    failures = (failures and (failures .. ", ") or "") .. label
+    return nil
+  end
+
+  -- REQUIRED. Identity and the levelling data itself. If any of these throw,
+  -- there is nothing worth uploading anyway, so this is not wrapped.
   local blob = {
     schema = self.SCHEMA,
     addon = LP.VERSION,
     id = self:EnsureID(),
-    -- The display name is what appears on the board. Defaults to the
-    -- character name; the player can set an alias instead.
-    -- IDENTITY, always sent, never displayed unless asked for.
-    --
-    -- The server derives char_id from name@realm and will not accept one
-    -- chosen by the client. Realm is part of that key so two players genuinely
-    -- named Thrall on different realms do not collide -- which means realm
-    -- cannot be optional, or those players lose both their identity and their
-    -- collision protection.
-    --
-    -- The privacy toggle still works: it now controls whether the realm is
-    -- SHOWN on the board, not whether it is sent. That distinction is stated
-    -- in the option's tooltip rather than left for someone to discover.
+    -- IDENTITY, always sent, never displayed unless asked for. The server
+    -- derives char_id from name@realm, and realm cannot be optional or two
+    -- players genuinely named the same lose their collision protection.
     name = name,
     realm = realm,
     showRealm = share.shareRealm ~= false,
-
-    -- PRESENTATION only. Never an identity input.
     display = (share.alias ~= "" and share.alias) or name,
-    class = share.shareClass ~= false and (select(2, UnitClass("player"))) or nil,
-    faction = share.shareFaction ~= false and (UnitFactionGroup and UnitFactionGroup("player")) or nil,
-    level = (UnitLevel and UnitLevel("player")) or nil,
-    questRate = LP.Rates and LP.Rates:GetQuestRate() or nil,
-    questRateSource = LP.Rates and LP.Rates:QuestRateSource() or nil,
     updated = (time and time()) or 0,
-    levels = levelRows(),
-    -- PvP block, only when the player opted into the twink board as well.
-    -- Nemesis names are OTHER people's character names, so this is a second,
-    -- separate consent rather than something that rides along with levelling
-    -- stats.
-    pvp = (share.sharePvP and LP.PvP) and LP.PvP:Payload() or nil,
-
-    -- Nemesis rides the same consent as the rest of the PvP payload: it
-    -- contains other people's character names, who never agreed to anything.
-    nemesis = (share.sharePvP and LP.Nemesis) and LP.Nemesis:Payload() or nil,
-
-    -- Rare kills are only ever your own character's activity, so they share
-    -- the ordinary levelling consent.
-    rares = LP.RareFinder and LP.RareFinder:Payload() or nil,
+    levels = opt("levels", levelRows) or {},
   }
+
+  -- OPTIONAL enrichments, each isolated. A DK on a private server whose
+  -- UnitClass or a module payload misbehaves still gets their levels on the
+  -- board.
+  blob.class = share.shareClass ~= false
+    and opt("class", function() return (select(2, UnitClass("player"))) end) or nil
+  blob.faction = share.shareFaction ~= false
+    and opt("faction", function() return UnitFactionGroup and UnitFactionGroup("player") end) or nil
+  blob.level = opt("level", function() return UnitLevel and UnitLevel("player") end)
+  blob.questRate = opt("questRate", function() return LP.Rates and LP.Rates:GetQuestRate() end)
+  blob.questRateSource = opt("questRateSource", function() return LP.Rates and LP.Rates:QuestRateSource() end)
+
+  -- PvP and nemesis ride the sharePvP consent (they carry other people's
+  -- character names). Rares are your own activity, so they ride the ordinary
+  -- levelling consent.
+  if share.sharePvP and LP.PvP then
+    blob.pvp = opt("pvp", function() return LP.PvP:Payload() end)
+  end
+  if share.sharePvP and LP.Nemesis then
+    blob.nemesis = opt("nemesis", function() return LP.Nemesis:Payload() end)
+  end
+  if LP.RareFinder then
+    blob.rares = opt("rares", function() return LP.RareFinder:Payload() end)
+  end
+
+  -- Record what degraded, so a client that quietly loses an enrichment can be
+  -- diagnosed from the saved file rather than from a day of guessing.
+  LP.gdb.exportFailures = failures
+  if failures and LP.debug then
+    LP:Print("|cffff8080export: skipped " .. failures .. " (see /lp share)|r")
+  end
+
   LP.gdb.export[key] = blob
   self:WriteJSON()
   return blob
@@ -255,8 +279,14 @@ end
 function Export:Summary()
   local blob = LP.gdb and LP.gdb.export and LP.gdb.export[(charKey())]
   if not blob then return "sharing off" end
-  return string.format("%d completed level%s ready to upload",
+  local msg = string.format("%d completed level%s ready to upload",
     #blob.levels, #blob.levels == 1 and "" or "s")
+  -- If an optional enrichment was dropped on this client, say so here rather
+  -- than leaving the player to wonder why a field is missing from the board.
+  if LP.gdb.exportFailures then
+    msg = msg .. " (this client could not read: " .. LP.gdb.exportFailures .. ")"
+  end
+  return msg
 end
 
 -- ---------------------------------------------------------------------------

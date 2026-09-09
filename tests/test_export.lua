@@ -244,4 +244,37 @@ h.run("the nudge fires when the first level completes, and only once", function(
   h.eq(said, after, "and never again this session -- a ding is not a nag slot")
 end)
 
+-- ==== a crashing optional field must not sink the whole blob ====
+--
+-- Two real players on the same private server got 'sharing on but no blob'.
+-- The blob was one table constructor; an optional call (a module payload, or
+-- UnitClass on an odd client) threw, and the entire export was lost -- while
+-- enabled=true persisted, so it looked on and uploaded nothing, silently,
+-- because SHARE_CHANGED handlers are pcall'd by the bus.
+
+h.run("levels still upload when an optional enrichment throws", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  LP.db.history = { { level = 7, elapsed = 300, xpBySource = { kill = 800 } } }
+
+  -- Break two optional paths the way a private-server client might.
+  LP.RareFinder.Payload = function() error("boom") end
+  _G.UnitClass = function() error("boom") end
+
+  LP.Export:Write()
+  h.ok(LP.gdb.exportJSON ~= nil, "the blob was written anyway")
+  h.ok(LP.gdb.exportJSON:find('"levels"'), "levels survived")
+  h.ok(LP.gdb.exportFailures ~= nil, "what failed was recorded")
+  h.ok(LP.gdb.exportFailures:find("rares"), "rares named")
+  h.ok(LP.gdb.exportFailures:find("class"), "class named")
+end)
+
+h.run("a clean client records no failures", function()
+  local LP = boot()
+  LP.db.profile.share.enabled = true
+  LP.db.history = { { level = 7, elapsed = 300 } }
+  LP.Export:Write()
+  h.eq(LP.gdb.exportFailures, nil, "nothing degraded")
+end)
+
 os.exit(h.report() and 0 or 1)
