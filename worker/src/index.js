@@ -147,10 +147,28 @@ function percentile(value, all) {
 // Validation
 // ---------------------------------------------------------------------------
 
+/**
+ * The addon emits `elapsed`; this used to read only `seconds`, so every level
+ * uploaded cleanly and was rejected as "non-positive time". The client name
+ * is already in the wild, so accept both rather than requiring everyone to
+ * update in lockstep.
+ */
+function levelSeconds(row) {
+  const v = row.elapsed != null ? row.elapsed : row.seconds;
+  return Number(v);
+}
+
+/** XP is split by source in the addon; the board wants the total. */
+function levelXP(row) {
+  if (row.xp != null) return Number(row.xp) || 0;
+  return (Number(row.kill) || 0) + (Number(row.quest) || 0) +
+         (Number(row.explore) || 0) + (Number(row.unknown) || 0);
+}
+
 function inspectLevel(row) {
   const flags = [];
   const level = Number(row.level);
-  const seconds = Number(row.seconds);
+  const seconds = levelSeconds(row);
   if (!Number.isFinite(level) || level < BOUNDS.levelMin || level > BOUNDS.levelMax)
     return { reject: `level out of range: ${row.level}` };
   if (!Number.isFinite(seconds) || seconds <= 0) return { reject: 'non-positive time' };
@@ -302,7 +320,7 @@ async function handleSubmit(req, env) {
            deaths = excluded.deaths, flags = excluded.flags,
            updated = excluded.updated`
       )
-        .bind(charId, lv.level, lv.seconds, lv.xp ?? null, lv.deaths ?? 0,
+        .bind(charId, lv.level, levelSeconds(lv), levelXP(lv), lv.deaths ?? 0,
               (v.flags || []).join(',') || null, t)
         .run();
       accepted.levels++;
